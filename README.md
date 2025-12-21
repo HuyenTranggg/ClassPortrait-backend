@@ -230,7 +230,7 @@ interface Student {
   "statusCode": 404
 }
 ```
-![alt text](https://github.com/user-attachments/assets/9de01553-6999-48e3-bb7f-a64bc3383cec)
+![alt text](image.png)
 ---
 
 ### ĐẶC TẢ HÀM
@@ -328,10 +328,10 @@ export class StudentsService {
 
 ### Swagger Documentation
 
-![alt text](https://github.com/user-attachments/assets/9de01553-6999-48e3-bb7f-a64bc3383cec)
+![alt text](image.png)
 
 **Truy cập**: http://localhost:3000/api
 
 ---
 
-**Frontend**: [Frontend Repo](https://github.com/HuyenTranggg/ClassPortrait-frontend)
+**Frontend**: [ClassPortrait-frontend](https://github.com/HuyenTranggg/ClassPortrait-frontend)
