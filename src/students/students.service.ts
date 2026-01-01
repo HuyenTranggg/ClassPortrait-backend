@@ -1,25 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import axios from 'axios';
 import { Stream } from 'stream';
-import { Student } from '../common/types';
-import { STUDENT_LIST } from '../common/constants';
 
 @Injectable()
 export class StudentsService {
-  // Danh sách sinh viên trong lớp
-  private students: Student[] = [...STUDENT_LIST];
-
-  /**
-   * Trả về danh sách tất cả sinh viên
-   */
-  findAll(): Student[] {
-    return this.students;
-  }
-
   /**
    * Lấy ảnh sinh viên từ API Toolhub
    */
-async getStudentPhoto(mssv: string): Promise<Stream> {
+  async getStudentPhoto(mssv: string): Promise<Stream> {
     try {
       const url = `https://api.toolhub.app/hust/AnhDaiDien?mssv=${mssv}`;
 
