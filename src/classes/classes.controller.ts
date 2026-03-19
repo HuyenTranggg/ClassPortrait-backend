@@ -10,22 +10,39 @@ import {
   UploadedFile,
   HttpCode,
   HttpStatus,
+  Req,
+  UnauthorizedException,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody, ApiParam } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { ClassesService } from './classes.service';
 import type { Class, Student, ClassWithStudents } from '../common/types';
 import { ImportClassDto } from './dto/import-class.dto';
 
 @ApiTags('classes')
+@ApiBearerAuth('bearer')
 @Controller('classes')
 export class ClassesController {
   constructor(private readonly classesService: ClassesService) {}
 
+  private extractUserId(req: any): string {
+    const candidate = req.user?.userId ?? req.user?.sub;
+    const userId = typeof candidate === 'string' ? candidate.trim() : '';
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+    if (!uuidRegex.test(userId)) {
+      throw new UnauthorizedException('Token không chứa userId hợp lệ. Vui lòng đăng nhập lại.');
+    }
+
+    return userId;
+  }
+
   @Get()
   @ApiOperation({ summary: 'Lấy danh sách tất cả các lớp' })
   @ApiResponse({ status: 200, description: 'Trả về danh sách các lớp' })
-  findAll() {
+  async findAll(): Promise<Array<Class & { studentCount: number }>> {
     return this.classesService.findAllWithStudentCount();
   }
 
@@ -40,8 +57,9 @@ export class ClassesController {
   })
   @ApiResponse({ status: 201, description: 'Import thành công' })
   @ApiResponse({ status: 400, description: 'File không hợp lệ hoặc thiếu cột MSSV' })
-  async importClass(@UploadedFile() file: Express.Multer.File) {
-    return await this.classesService.importClass(file);
+  async importClass(@UploadedFile() file: Express.Multer.File, @Req() req: any) {
+    const userId = this.extractUserId(req);
+    return await this.classesService.importClass(file, userId);
   }
 
   @Get(':id')
@@ -49,7 +67,7 @@ export class ClassesController {
   @ApiParam({ name: 'id', description: 'ID của lớp' })
   @ApiResponse({ status: 200, description: 'Trả về thông tin lớp kèm danh sách sinh viên' })
   @ApiResponse({ status: 404, description: 'Không tìm thấy lớp' })
-  findOne(@Param('id') id: string): ClassWithStudents {
+  async findOne(@Param('id', new ParseUUIDPipe()) id: string): Promise<ClassWithStudents> {
     return this.classesService.findOneWithStudents(id);
   }
 
@@ -58,7 +76,7 @@ export class ClassesController {
   @ApiParam({ name: 'id', description: 'ID của lớp' })
   @ApiResponse({ status: 200, description: 'Trả về danh sách sinh viên' })
   @ApiResponse({ status: 404, description: 'Không tìm thấy lớp' })
-  getStudents(@Param('id') id: string): Student[] {
+  async getStudents(@Param('id', new ParseUUIDPipe()) id: string): Promise<Student[]> {
     return this.classesService.getStudents(id);
   }
 
@@ -67,7 +85,8 @@ export class ClassesController {
   @ApiParam({ name: 'id', description: 'ID của lớp cần xóa' })
   @ApiResponse({ status: 200, description: 'Xóa thành công' })
   @ApiResponse({ status: 404, description: 'Không tìm thấy lớp' })
-  remove(@Param('id') id: string) {
-    return this.classesService.remove(id);
+  remove(@Param('id', new ParseUUIDPipe()) id: string, @Req() req: any) {
+    const userId = this.extractUserId(req);
+    return this.classesService.remove(id, userId);
   }
 }

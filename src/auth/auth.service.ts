@@ -1,8 +1,11 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
 import { LoginDto } from './dto/login.dto';
+import { UserEntity } from '../entities/user.entity';
+import { Repository } from 'typeorm';
 
 const HUST_AUTH_URL = 'https://api.toolhub.app/hust/KiemTraMatKhau';
 
@@ -11,6 +14,8 @@ export class AuthService {
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    @InjectRepository(UserEntity)
+    private readonly usersRepository: Repository<UserEntity>,
   ) {}
 
   async login(dto: LoginDto): Promise<{ access_token: string }> {
@@ -21,7 +26,8 @@ export class AuthService {
     const adminEmail = (this.configService.get<string>('ADMIN_EMAIL') ?? '').trim().toLowerCase();
     const adminPassword = this.configService.get<string>('ADMIN_PASSWORD') ?? '';
     if (adminEmail && normalizedEmail === adminEmail && password === adminPassword) {
-      const access_token = this.jwtService.sign({ sub: normalizedEmail, email: normalizedEmail, role: 'admin' });
+      const userId = await this.upsertUser(normalizedEmail);
+      const access_token = this.jwtService.sign({ sub: userId, userId, email: normalizedEmail, role: 'admin' });
       return { access_token };
     }
 
@@ -36,9 +42,27 @@ export class AuthService {
       throw new UnauthorizedException('Sai tài khoản hoặc mật khẩu HUST');
     }
 
-    // 4. Tạo JWT token
-    const access_token = this.jwtService.sign({ sub: normalizedEmail, email: normalizedEmail, role: 'lecturer' });
+    // 4. Lưu / cập nhật user và tạo JWT token
+    const userId = await this.upsertUser(normalizedEmail);
+    const access_token = this.jwtService.sign({ sub: userId, userId, email: normalizedEmail, role: 'lecturer' });
     return { access_token };
+  }
+
+  private async upsertUser(email: string): Promise<string> {
+    const normalizedEmail = email.trim().toLowerCase();
+    let user = await this.usersRepository.findOne({ where: { email: normalizedEmail } });
+
+    if (!user) {
+      user = this.usersRepository.create({
+        email: normalizedEmail,
+        lastLoginAt: new Date(),
+      });
+    } else {
+      user.lastLoginAt = new Date();
+    }
+
+    const saved = await this.usersRepository.save(user);
+    return saved.id;
   }
 
   private async verifyHustCredentials(email: string, password: string): Promise<boolean> {

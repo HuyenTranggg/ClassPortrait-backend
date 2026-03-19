@@ -1,57 +1,133 @@
 // backend/src/classes/classes.service.ts
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import csvParser from 'csv-parser';
 import { Readable } from 'stream';
-import { Class, Student, ClassStudent, ClassWithStudents } from '../common/types';
-import { v4 as uuidv4 } from 'uuid';
+import { Class, Student, ClassWithStudents } from '../common/types';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { ClassEntity } from '../entities/class.entity';
+import { StudentEntity } from '../entities/student.entity';
+import { ImportHistoryEntity, SourceType } from '../entities/import-history.entity';
+import { signPhotoUrl } from '../common/utils/photo-signature.util';
 
 @Injectable()
 export class ClassesService {
-  // Lưu trữ danh sách lớp (không chứa students)
-  private classes: Class[] = [];
-  
-  // Lưu trữ danh sách sinh viên (unique by mssv)
-  private students: Map<string, Student> = new Map();
-  
-  // Lưu trữ quan hệ giữa lớp và sinh viên (join table)
-  private classStudents: ClassStudent[] = [];
+  constructor(
+    @InjectRepository(ClassEntity)
+    private readonly classesRepository: Repository<ClassEntity>,
+    @InjectRepository(StudentEntity)
+    private readonly studentsRepository: Repository<StudentEntity>,
+    @InjectRepository(ImportHistoryEntity)
+    private readonly importHistoryRepository: Repository<ImportHistoryEntity>,
+  ) {}
+
+  private buildStudentPhotoUrl(mssv: string, classId: string): string {
+    const port = process.env.PORT ?? '3000';
+    const configuredBaseUrl = process.env.BACKEND_BASE_URL?.trim();
+    const baseUrl = configuredBaseUrl && configuredBaseUrl.length > 0 ? configuredBaseUrl : `http://localhost:${port}`;
+    const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 7;
+    const signature = signPhotoUrl(mssv, classId, expiresAt);
+    return `${baseUrl.replace(/\/$/, '')}/students/${encodeURIComponent(mssv)}/photo?classId=${encodeURIComponent(classId)}&exp=${expiresAt}&sig=${signature}`;
+  }
 
   /**
    * Lấy tất cả các lớp (không bao gồm danh sách sinh viên)
    */
-  findAll(): Class[] {
-    return this.classes;
+  async findAll(): Promise<Class[]> {
+    const entities = await this.classesRepository.find({
+      order: { createdAt: 'DESC' },
+    });
+
+    return entities.map<Class>((entity) => ({
+      id: entity.id,
+      classCode: entity.classCode,
+      courseCode: entity.courseCode ?? undefined,
+      courseName: entity.courseName ?? undefined,
+      semester: entity.semester ?? undefined,
+      department: entity.department ?? undefined,
+      classType: entity.classType ?? undefined,
+      instructor: entity.instructor ?? undefined,
+      createdAt: entity.createdAt,
+    }));
   }
 
   /**
    * Lấy tất cả các lớp kèm số lượng sinh viên
    */
-  findAllWithStudentCount(): Array<Class & { studentCount: number }> {
-    return this.classes.map((cls) => ({
-      ...cls,
-      studentCount: this.classStudents.filter((cs) => cs.classId === cls.id).length,
+  async findAllWithStudentCount(): Promise<Array<Class & { studentCount: number }>> {
+    const rows = await this.classesRepository
+      .createQueryBuilder('c')
+      .leftJoin('c.students', 's')
+      .select('c.id', 'id')
+      .addSelect('c.classCode', 'classCode')
+      .addSelect('c.courseCode', 'courseCode')
+      .addSelect('c.courseName', 'courseName')
+      .addSelect('c.semester', 'semester')
+      .addSelect('c.department', 'department')
+      .addSelect('c.classType', 'classType')
+      .addSelect('c.instructor', 'instructor')
+      .addSelect('c.createdAt', 'createdAt')
+      .addSelect('COUNT(s.id)', 'studentCount')
+      .groupBy('c.id')
+      .orderBy('c.createdAt', 'DESC')
+      .getRawMany<{
+        id: string;
+        classCode: string;
+        courseCode: string | null;
+        courseName: string | null;
+        semester: string | null;
+        department: string | null;
+        classType: string | null;
+        instructor: string | null;
+        createdAt: Date;
+        studentCount: string;
+      }>();
+
+    return rows.map((row) => ({
+      id: row.id,
+      classCode: row.classCode,
+      courseCode: row.courseCode ?? undefined,
+      courseName: row.courseName ?? undefined,
+      semester: row.semester ?? undefined,
+      department: row.department ?? undefined,
+      classType: row.classType ?? undefined,
+      instructor: row.instructor ?? undefined,
+      createdAt: row.createdAt,
+      studentCount: Number(row.studentCount),
     }));
   }
 
   /**
    * Lấy thông tin một lớp theo ID (không bao gồm danh sách sinh viên)
    */
-  findOne(id: string): Class {
-    const classItem = this.classes.find((cls) => cls.id === id);
-    if (!classItem) {
+  async findOne(id: string): Promise<Class> {
+    const entity = await this.classesRepository.findOne({ where: { id } });
+
+    if (!entity) {
       throw new NotFoundException(`Không tìm thấy lớp với ID ${id}`);
     }
-    return classItem;
+
+    return {
+      id: entity.id,
+      classCode: entity.classCode,
+      courseCode: entity.courseCode ?? undefined,
+      courseName: entity.courseName ?? undefined,
+      semester: entity.semester ?? undefined,
+      department: entity.department ?? undefined,
+      classType: entity.classType ?? undefined,
+      instructor: entity.instructor ?? undefined,
+      createdAt: entity.createdAt,
+    };
   }
 
   /**
    * Lấy thông tin một lớp kèm danh sách sinh viên
    */
-  findOneWithStudents(id: string): ClassWithStudents {
-    const classItem = this.findOne(id);
-    const students = this.getStudents(id);
+  async findOneWithStudents(id: string): Promise<ClassWithStudents> {
+    const classItem = await this.findOne(id);
+    const students = await this.getStudents(id);
     return {
       ...classItem,
       students,
@@ -61,41 +137,48 @@ export class ClassesService {
   /**
    * Lấy danh sách sinh viên của một lớp
    */
-  getStudents(classId: string): Student[] {
-    // Tìm tất cả quan hệ của lớp này
-    const relations = this.classStudents.filter((cs) => cs.classId === classId);
-    
-    // Lấy thông tin sinh viên từ map
-    return relations
-      .map((rel) => this.students.get(rel.mssv))
-      .filter((student): student is Student => student !== undefined);
+  async getStudents(classId: string): Promise<Student[]> {
+    const entities = await this.studentsRepository.find({
+      where: { classId },
+      order: { importOrder: 'ASC' },
+    });
+
+    return entities.map<Student>((entity) => ({
+      mssv: entity.mssv,
+      name: entity.fullName ?? undefined,
+      photoUrl: this.buildStudentPhotoUrl(entity.mssv, entity.classId),
+      photoStatus: entity.photoStatus,
+      importOrder: entity.importOrder,
+    }));
   }
 
   /**
    * Xóa một lớp và tất cả quan hệ với sinh viên
    */
-  remove(id: string): { success: boolean; message: string } {
-    const index = this.classes.findIndex((cls) => cls.id === id);
-    if (index === -1) {
-      throw new NotFoundException(`Không tìm thấy lớp với ID ${id}`);
+  async remove(id: string, userId: string): Promise<{ success: boolean; message: string }> {
+    const classEntity = await this.classesRepository.findOne({ where: { id, userId } });
+    if (!classEntity) {
+      throw new NotFoundException(`Không tìm thấy lớp với ID ${id} thuộc về người dùng hiện tại`);
     }
-    
-    // Xóa lớp
-    this.classes.splice(index, 1);
-    
-    // Xóa tất cả quan hệ của lớp này
-    this.classStudents = this.classStudents.filter((cs) => cs.classId !== id);
-    
-    return {
-      success: true,
-      message: `Đã xóa lớp thành công`,
-    };
+
+    try {
+      await this.classesRepository.remove(classEntity);
+      return {
+        success: true,
+        message: `Đã xóa lớp thành công`,
+      };
+    } catch {
+      throw new ForbiddenException('Không thể xóa lớp học');
+    }
   }
 
   /**
    * Import lớp học từ file (Excel, CSV, hoặc JSON)
    */
-  async importClass(file: Express.Multer.File): Promise<{ success: boolean; classId: string; message: string }> {
+  async importClass(
+    file: Express.Multer.File,
+    userId: string,
+  ): Promise<{ success: boolean; classId: string; message: string }> {
     if (!file) {
       throw new BadRequestException('Không có file nào được upload');
     }
@@ -131,42 +214,55 @@ export class ClassesService {
         throw new BadRequestException('Không tìm thấy sinh viên nào trong file');
       }
 
-      // Tạo lớp mới (không chứa students)
-      const newClass: Class = {
-        id: uuidv4(),
-        classCode: classInfo.classCode,
-        courseCode: classInfo.courseCode,
-        courseName: classInfo.courseName,
-        semester: classInfo.semester,
-        department: classInfo.department,
-        classType: classInfo.classType,
-        instructor: classInfo.instructor,
-        createdAt: new Date(),
-      };
-
-      this.classes.push(newClass);
-
-      // Lưu sinh viên vào map (nếu chưa có)
-      students.forEach((student) => {
-        if (!this.students.has(student.mssv)) {
-          this.students.set(student.mssv, student);
-        }
-      });
-
-      // Tạo quan hệ giữa lớp và sinh viên
-      const now = new Date();
-      students.forEach((student) => {
-        this.classStudents.push({
-          classId: newClass.id,
-          mssv: student.mssv
+      try {
+        const classEntity = this.classesRepository.create({
+          userId,
+          classCode: classInfo.classCode,
+          courseCode: classInfo.courseCode ?? null,
+          courseName: classInfo.courseName ?? null,
+          semester: classInfo.semester ?? null,
+          department: classInfo.department ?? null,
+          classType: classInfo.classType ?? null,
+          instructor: classInfo.instructor ?? null,
         });
-      });
 
-      return {
-        success: true,
-        classId: newClass.id,
-        message: `Đã import thành công lớp "${newClass.classCode}" với ${students.length} sinh viên`,
-      };
+        const savedClass = await this.classesRepository.save(classEntity);
+
+        const studentEntities = students.map((s, index) =>
+          this.studentsRepository.create({
+            classId: savedClass.id,
+            mssv: s.mssv,
+            importOrder: index,
+            fullName: (s as any).name ?? null,
+          }),
+        );
+
+        if (studentEntities.length > 0) {
+          await this.studentsRepository.save(studentEntities);
+        }
+
+        const history = this.importHistoryRepository.create({
+          classId: savedClass.id,
+          userId,
+          sourceType: SourceType.EXCEL,
+          sourceName: file.originalname,
+          totalCount: students.length,
+          columnMapping: {},
+        });
+
+        await this.importHistoryRepository.save(history);
+
+        return {
+          success: true,
+          classId: savedClass.id,
+          message: `Đã import thành công lớp "${classInfo.classCode}" với ${students.length} sinh viên`,
+        };
+      } catch (error) {
+        if (error instanceof BadRequestException) {
+          throw error;
+        }
+        throw new BadRequestException(`Lỗi khi xử lý file: ${error.message}`);
+      }
     } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;
