@@ -1,13 +1,57 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import axios from 'axios';
-import { Stream } from 'stream';
+import { Readable, Stream } from 'stream';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { StudentEntity, PhotoStatus } from '../entities/student.entity';
+import { ClassEntity } from '../entities/class.entity';
+import { verifyPhotoSignature } from '../common/utils/photo-signature.util';
+
+export type StudentPhotoResult = {
+  stream: Stream;
+  contentType: string;
+};
 
 @Injectable()
 export class StudentsService {
+  constructor(
+    @InjectRepository(StudentEntity)
+    private readonly studentsRepository: Repository<StudentEntity>,
+    @InjectRepository(ClassEntity)
+    private readonly classesRepository: Repository<ClassEntity>,
+  ) {}
+
   /**
    * Lấy ảnh sinh viên từ API Toolhub
    */
-  async getStudentPhoto(mssv: string): Promise<Stream> {
+  async getStudentPhoto(
+    mssv: string,
+    classId: string,
+    userId?: string,
+    exp?: number,
+    sig?: string,
+  ): Promise<StudentPhotoResult> {
+    if (!classId) {
+      throw new NotFoundException('Thiếu classId khi lấy ảnh sinh viên');
+    }
+
+    if (userId) {
+      const classOwned = await this.classesRepository.exists({ where: { id: classId, userId } });
+      if (!classOwned) {
+        throw new ForbiddenException('Bạn không có quyền xem ảnh sinh viên của lớp này');
+      }
+    } else {
+      const isValidSignature = verifyPhotoSignature(mssv, classId, exp ?? NaN, sig ?? '');
+      if (!isValidSignature) {
+        throw new ForbiddenException('URL ảnh không hợp lệ hoặc đã hết hạn');
+      }
+    }
+
+    const student = await this.studentsRepository.findOne({ where: { mssv, classId } });
+    if (!student) {
+      throw new NotFoundException('Không tìm thấy sinh viên trong lớp này');
+    }
+
     try {
       const url = `https://api.toolhub.app/hust/AnhDaiDien?mssv=${mssv}`;
 
@@ -17,11 +61,27 @@ export class StudentsService {
       });
 
       // Trả về stream dữ liệu (chính là cái ảnh)
-      return response.data;
+      await this.studentsRepository.update(
+        { id: student.id },
+        { photoStatus: PhotoStatus.LOADED },
+      );
+
+      return {
+        stream: response.data,
+        contentType: response.headers['content-type'] ?? 'image/jpeg',
+      };
     } catch (error) {
-      // Nếu API toolhub báo lỗi (ví dụ sai MSSV), ném ra lỗi 404
+      // Fallback ảnh placeholder để frontend luôn nhận được URL/response hợp lệ
       console.error(`Could not fetch photo for MSSV: ${mssv}`, error.message);
-      throw new NotFoundException(`Không tìm thấy ảnh cho MSSV ${mssv}`);
+      await this.studentsRepository.update(
+        { id: student.id },
+        { photoStatus: PhotoStatus.NOT_FOUND },
+      );
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240"><rect width="240" height="240" fill="#6c757d"/><text x="120" y="108" text-anchor="middle" font-size="20" font-family="Arial, sans-serif" fill="#ffffff">No Photo</text><text x="120" y="140" text-anchor="middle" font-size="14" font-family="Arial, sans-serif" fill="#ffffff">${mssv}</text></svg>`;
+      return {
+        stream: Readable.from(Buffer.from(svg, 'utf-8')),
+        contentType: 'image/svg+xml; charset=utf-8',
+      };
     }
   }
 }

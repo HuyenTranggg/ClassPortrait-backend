@@ -6,4 +6,7 @@
 export interface Student {
   mssv: string;
   name?: string;
+  photoUrl?: string;
+  photoStatus?: 'pending' | 'loaded' | 'not_found';
+  importOrder?: number;
 }
