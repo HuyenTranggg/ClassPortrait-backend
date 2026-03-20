@@ -1,6 +1,12 @@
 // backend/src/classes/classes.service.ts
 
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import csvParser from 'csv-parser';
 import { Readable } from 'stream';
@@ -11,6 +17,27 @@ import { ClassEntity } from '../entities/class.entity';
 import { StudentEntity } from '../entities/student.entity';
 import { ImportHistoryEntity, SourceType } from '../entities/import-history.entity';
 import { signPhotoUrl } from '../common/utils/photo-signature.util';
+
+type ImportMappingMode = 'auto' | 'manual';
+
+type ImportClassOptions = {
+  mssvColumn?: string;
+  nameColumn?: string;
+  startRow?: number;
+  mappingMode?: ImportMappingMode;
+};
+
+type ParsedImportData = {
+  rows: Array<Record<string, any> & { __rowNumber: number }>;
+  headers: string[];
+  sourceType: SourceType;
+};
+
+type ResolvedImportMapping = {
+  mssvColumn: string;
+  nameColumn: string;
+  startRow: number;
+};
 
 @Injectable()
 export class ClassesService {
@@ -30,6 +57,81 @@ export class ClassesService {
     const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 7;
     const signature = signPhotoUrl(mssv, classId, expiresAt);
     return `${baseUrl.replace(/\/$/, '')}/students/${encodeURIComponent(mssv)}/photo?classId=${encodeURIComponent(classId)}&exp=${expiresAt}&sig=${signature}`;
+  }
+
+  private normalizeForCompare(value: string): string {
+    return value
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '');
+  }
+
+  private cleanCellValue(value: unknown): string {
+    return String(value ?? '').trim();
+  }
+
+  private isValidMssv(value: string): boolean {
+    return /^[A-Za-z0-9._-]{4,30}$/.test(value);
+  }
+
+  private detectHeaderRow(rawRows: unknown[][]): number {
+    const limit = Math.min(rawRows.length, 10);
+    for (let index = 0; index < limit; index += 1) {
+      const row = rawRows[index] ?? [];
+      const nonEmptyCount = row.filter((cell) => this.cleanCellValue(cell).length > 0).length;
+      if (nonEmptyCount >= 2) {
+        return index;
+      }
+    }
+    return 0;
+  }
+
+  private inferSourceType(fileExtension?: string): SourceType {
+    switch ((fileExtension ?? '').toLowerCase()) {
+      case 'xlsx':
+      case 'xls':
+        return SourceType.EXCEL;
+      case 'csv':
+        return SourceType.EXCEL;
+      case 'json':
+        return SourceType.EXCEL;
+      default:
+        return SourceType.EXCEL;
+    }
+  }
+
+  private findHeaderKey(headers: string[], requestedHeader: string): string | undefined {
+    const normalizedRequested = this.normalizeForCompare(requestedHeader);
+    return headers.find((header) => this.normalizeForCompare(header) === normalizedRequested);
+  }
+
+  private findHeaderByAliases(headers: string[], aliases: string[]): string | undefined {
+    for (const alias of aliases) {
+      const normalizedAlias = this.normalizeForCompare(alias);
+      const exact = headers.find((header) => this.normalizeForCompare(header) === normalizedAlias);
+      if (exact) return exact;
+    }
+
+    for (const alias of aliases) {
+      const normalizedAlias = this.normalizeForCompare(alias);
+      const contains = headers.find((header) => this.normalizeForCompare(header).includes(normalizedAlias));
+      if (contains) return contains;
+    }
+
+    return undefined;
+  }
+
+  private assertInvalidColumnMapping(message: string, status: 'bad-request' | 'unprocessable' = 'unprocessable'): never {
+    const payload = {
+      code: 'INVALID_COLUMN_MAPPING',
+      message,
+    };
+
+    if (status === 'bad-request') {
+      throw new BadRequestException(payload);
+    }
+    throw new UnprocessableEntityException(payload);
   }
 
   /**
@@ -178,37 +280,61 @@ export class ClassesService {
   async importClass(
     file: Express.Multer.File,
     userId: string,
-  ): Promise<{ success: boolean; classId: string; message: string }> {
+    options?: ImportClassOptions,
+  ): Promise<{
+    success: boolean;
+    classId: string;
+    message: string;
+    mappingModeUsed: ImportMappingMode;
+    resolvedMapping: ResolvedImportMapping;
+    stats: {
+      totalRowsRead: number;
+      skippedRows: number;
+      importedRows: number;
+    };
+  }> {
     if (!file) {
       throw new BadRequestException('Không có file nào được upload');
+    }
+
+    const startRow = options?.startRow ?? 2;
+    if (!Number.isInteger(startRow) || startRow < 1) {
+      this.assertInvalidColumnMapping('startRow phải là số nguyên lớn hơn hoặc bằng 1', 'bad-request');
     }
 
     try {
       // Xử lý theo loại file
       const fileExtension = file.originalname.split('.').pop()?.toLowerCase();
 
-      let data: any[];
+      let parsedData: ParsedImportData;
       switch (fileExtension) {
         case 'xlsx':
         case 'xls':
-          data = await this.parseExcelFile(file.buffer);
+          parsedData = await this.parseExcelFile(file.buffer);
           break;
         case 'csv':
-          data = await this.parseCsvFile(file.buffer);
+          parsedData = await this.parseCsvFile(file.buffer);
           break;
         case 'json':
-          data = this.parseJsonFile(file.buffer);
+          parsedData = this.parseJsonFile(file.buffer);
           break;
         default:
           throw new BadRequestException('Định dạng file không được hỗ trợ. Vui lòng sử dụng .xlsx, .csv hoặc .json');
       }
 
-      if (data.length === 0) {
+      if (parsedData.rows.length === 0) {
         throw new BadRequestException('File không chứa dữ liệu');
       }
 
       // Trích xuất thông tin lớp và danh sách sinh viên
-      const { classInfo, students } = this.extractClassData(data);
+      const { classInfo, students, mappingModeUsed, resolvedMapping, stats } = this.extractClassData(
+        parsedData.rows,
+        parsedData.headers,
+        {
+          ...options,
+          startRow,
+        },
+      );
 
       if (students.length === 0) {
         throw new BadRequestException('Không tìm thấy sinh viên nào trong file');
@@ -244,10 +370,14 @@ export class ClassesService {
         const history = this.importHistoryRepository.create({
           classId: savedClass.id,
           userId,
-          sourceType: SourceType.EXCEL,
+          sourceType: this.inferSourceType(fileExtension),
           sourceName: file.originalname,
           totalCount: students.length,
-          columnMapping: {},
+          columnMapping: {
+            mappingModeUsed,
+            resolvedMapping,
+            stats,
+          },
         });
 
         await this.importHistoryRepository.save(history);
@@ -256,15 +386,24 @@ export class ClassesService {
           success: true,
           classId: savedClass.id,
           message: `Đã import thành công lớp "${classInfo.classCode}" với ${students.length} sinh viên`,
+          mappingModeUsed,
+          resolvedMapping,
+          stats,
         };
       } catch (error) {
         if (error instanceof BadRequestException) {
+          throw error;
+        }
+        if (error instanceof UnprocessableEntityException) {
           throw error;
         }
         throw new BadRequestException(`Lỗi khi xử lý file: ${error.message}`);
       }
     } catch (error) {
       if (error instanceof BadRequestException) {
+        throw error;
+      }
+      if (error instanceof UnprocessableEntityException) {
         throw error;
       }
       throw new BadRequestException(`Lỗi khi xử lý file: ${error.message}`);
@@ -274,26 +413,79 @@ export class ClassesService {
   /**
    * Xử lý file Excel
    */
-  private async parseExcelFile(buffer: Buffer): Promise<any[]> {
+  private async parseExcelFile(buffer: Buffer): Promise<ParsedImportData> {
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
+    if (!sheetName) {
+      throw new BadRequestException('File Excel không có sheet dữ liệu');
+    }
     const worksheet = workbook.Sheets[sheetName];
-    const data = XLSX.utils.sheet_to_json(worksheet);
-    return data;
+    const matrix = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+      header: 1,
+      blankrows: false,
+      defval: '',
+    });
+
+    const headerRowIndex = this.detectHeaderRow(matrix);
+    const rawHeaders = matrix[headerRowIndex] ?? [];
+    const headers = rawHeaders
+      .map((cell, index) => this.cleanCellValue(cell) || `Column ${index + 1}`)
+      .map((header) => header.trim());
+
+    const rows: Array<Record<string, any> & { __rowNumber: number }> = [];
+    for (let rowIndex = headerRowIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
+      const sourceRow = matrix[rowIndex] ?? [];
+      const rowObject: Record<string, any> & { __rowNumber: number } = {
+        __rowNumber: rowIndex + 1,
+      };
+
+      headers.forEach((header, cellIndex) => {
+        rowObject[header] = sourceRow[cellIndex];
+      });
+
+      rows.push(rowObject);
+    }
+
+    return {
+      rows,
+      headers,
+      sourceType: SourceType.EXCEL,
+    };
   }
 
   /**
    * Xử lý file CSV
    */
-  private async parseCsvFile(buffer: Buffer): Promise<any[]> {
+  private async parseCsvFile(buffer: Buffer): Promise<ParsedImportData> {
     return new Promise((resolve, reject) => {
-      const results: any[] = [];
+      const results: Array<Record<string, any> & { __rowNumber: number }> = [];
+      const headersSet = new Set<string>();
       const stream = Readable.from(buffer);
+      let dataRowIndex = 0;
 
       stream
         .pipe(csvParser())
-        .on('data', (data) => results.push(data))
-        .on('end', () => resolve(results))
+        .on('data', (data) => {
+          dataRowIndex += 1;
+          const row: Record<string, any> & { __rowNumber: number } = {
+            __rowNumber: dataRowIndex + 1,
+          };
+
+          Object.entries(data).forEach(([key, value]) => {
+            const cleanedKey = this.cleanCellValue(key);
+            headersSet.add(cleanedKey);
+            row[cleanedKey] = value;
+          });
+
+          results.push(row);
+        })
+        .on('end', () =>
+          resolve({
+            rows: results,
+            headers: Array.from(headersSet),
+            sourceType: SourceType.EXCEL,
+          }),
+        )
         .on('error', (error) => reject(error));
     });
   }
@@ -301,16 +493,44 @@ export class ClassesService {
   /**
    * Xử lý file JSON
    */
-  private parseJsonFile(buffer: Buffer): any[] {
+  private parseJsonFile(buffer: Buffer): ParsedImportData {
     const jsonString = buffer.toString('utf-8');
     const data = JSON.parse(jsonString);
-    return Array.isArray(data) ? data : [data];
+    const list = Array.isArray(data) ? data : [data];
+    const rows: Array<Record<string, any> & { __rowNumber: number }> = [];
+    const headersSet = new Set<string>();
+
+    list.forEach((item, index) => {
+      const row: Record<string, any> & { __rowNumber: number } = {
+        __rowNumber: index + 1,
+      };
+
+      if (item && typeof item === 'object') {
+        Object.entries(item).forEach(([key, value]) => {
+          const cleanedKey = this.cleanCellValue(key);
+          headersSet.add(cleanedKey);
+          row[cleanedKey] = value;
+        });
+      }
+
+      rows.push(row);
+    });
+
+    return {
+      rows,
+      headers: Array.from(headersSet),
+      sourceType: SourceType.EXCEL,
+    };
   }
 
   /**
    * Trích xuất thông tin lớp và danh sách sinh viên từ dữ liệu
    */
-  private extractClassData(data: any[]): {
+  private extractClassData(
+    rows: Array<Record<string, any> & { __rowNumber: number }>,
+    headers: string[],
+    options: ImportClassOptions,
+  ): {
     classInfo: {
       classCode: string;
       courseCode?: string;
@@ -321,168 +541,186 @@ export class ClassesService {
       instructor?: string;
     };
     students: Student[];
+    mappingModeUsed: ImportMappingMode;
+    resolvedMapping: ResolvedImportMapping;
+    stats: {
+      totalRowsRead: number;
+      skippedRows: number;
+      importedRows: number;
+    };
   } {
-    const firstRow = data[0];
+    const startRow = options.startRow ?? 2;
+    const filteredRows = rows.filter((row) => row.__rowNumber >= startRow);
 
-    // Tìm cột mã lớp (BẮT BUỘC)
-    const classCodeKey = Object.keys(firstRow).find((key) => {
-      const lowerKey = key.toLowerCase().trim();
-      return (
-        lowerKey === 'mã lớp' ||
-        lowerKey === 'ma lop' ||
-        lowerKey === 'class code' ||
-        lowerKey === 'mã lớp học' ||
-        lowerKey.includes('mã lớp')
-      );
-    });
-
-    // Tìm cột mã học phần (optional)
-    const courseCodeKey = Object.keys(firstRow).find((key) => {
-      const lowerKey = key.toLowerCase().trim();
-      return (
-        lowerKey === 'mã học phần' ||
-        lowerKey === 'ma hoc phan' ||
-        lowerKey === 'course code' ||
-        lowerKey === 'mã hp' ||
-        lowerKey.includes('mã học phần')
-      );
-    });
-
-    // Tìm cột tên học phần (optional)
-    const courseNameKey = Object.keys(firstRow).find((key) => {
-      const lowerKey = key.toLowerCase().trim();
-      return (
-        lowerKey === 'tên học phần' ||
-        lowerKey === 'ten hoc phan' ||
-        lowerKey === 'course name' ||
-        lowerKey === 'tên hp' ||
-        lowerKey === 'môn học' ||
-        lowerKey === 'mon hoc' ||
-        lowerKey.includes('tên học phần') ||
-        lowerKey.includes('tên môn')
-      );
-    });
-
-    // Tìm cột học kỳ (optional)
-    const semesterKey = Object.keys(firstRow).find((key) => {
-      const lowerKey = key.toLowerCase().trim();
-      return (
-        lowerKey === 'học kỳ' ||
-        lowerKey === 'hoc ky' ||
-        lowerKey === 'semester' ||
-        lowerKey === 'học kì' ||
-        lowerKey === 'hoc ki' ||
-        lowerKey.includes('học kỳ') ||
-        lowerKey.includes('học kì')
-      );
-    });
-
-    // Tìm cột đơn vị giảng dạy (optional)
-    const departmentKey = Object.keys(firstRow).find((key) => {
-      const lowerKey = key.toLowerCase().trim();
-      return (
-        lowerKey === 'đv giảng dạy' ||
-        lowerKey === 'đơn vị' ||
-        lowerKey === 'đơn vị giảng dạy' ||
-        lowerKey === 'don vi giang day' ||
-        lowerKey === 'department' ||
-        lowerKey === 'khoa' ||
-        lowerKey === 'viện' ||
-        lowerKey.includes('đơn vị') ||
-        lowerKey.includes('khoa')
-      );
-    });
-
-    // Tìm cột loại lớp (optional)
-    const classTypeKey = Object.keys(firstRow).find((key) => {
-      const lowerKey = key.toLowerCase().trim();
-      return (
-        lowerKey === 'loại lớp' ||
-        lowerKey === 'loai lop' ||
-        lowerKey === 'class type' ||
-        lowerKey === 'type' ||
-        lowerKey === 'loại' ||
-        lowerKey.includes('loại lớp') ||
-        lowerKey.includes('loại')
-      );
-    });
-
-    // Tìm cột giảng viên (optional)
-    const instructorKey = Object.keys(firstRow).find((key) => {
-      const lowerKey = key.toLowerCase().trim();
-      return (
-        lowerKey === 'giảng viên' ||
-        lowerKey === 'giang vien' ||
-        lowerKey === 'gv giảng dạy' ||
-        lowerKey === 'instructor' ||
-        lowerKey === 'teacher' ||
-        lowerKey === 'giáo viên' ||
-        lowerKey === 'giao vien' ||
-        lowerKey.includes('giảng viên') ||
-        lowerKey.includes('giáo viên')
-      );
-    });
-
-    // Tìm cột MSSV
-    const mssvKey = Object.keys(firstRow).find((key) => {
-      const lowerKey = key.toLowerCase().trim();
-      return lowerKey === 'mssv' || lowerKey === 'mã số sinh viên' || lowerKey.includes('mssv');
-    });
-
-    if (!mssvKey) {
-      throw new BadRequestException(
-        'Không tìm thấy cột MSSV trong file. Vui lòng đảm bảo có cột tên "MSSV", "mssv" hoặc "Mã số sinh viên"',
-      );
+    if (filteredRows.length === 0) {
+      throw new BadRequestException('Không có dữ liệu tại hoặc sau dòng bắt đầu đã chọn');
     }
 
-    // Tìm cột họ tên (optional)
-    const nameKey = Object.keys(firstRow).find((key) => {
-      const lowerKey = key.toLowerCase().trim();
-      return (
-        lowerKey === 'họ và tên' ||
-        lowerKey === 'họ tên' ||
-        lowerKey === 'ho va ten' ||
-        lowerKey === 'ho ten' ||
-        lowerKey === 'họ và tên sv' ||
-        lowerKey === 'họ và tên sinh viên' ||
-        lowerKey === 'name' ||
-        lowerKey === 'fullname'
-      );
-    });
+    const firstRow = filteredRows[0];
+
+    // Tìm cột mã lớp (BẮT BUỘC)
+    const classCodeKey = this.findHeaderByAliases(headers, ['mã lớp', 'ma lop', 'class code', 'mã lớp học']);
+
+    // Tìm cột mã học phần (optional)
+    const courseCodeKey = this.findHeaderByAliases(headers, ['mã học phần', 'ma hoc phan', 'course code', 'mã hp']);
+
+    // Tìm cột tên học phần (optional)
+    const courseNameKey = this.findHeaderByAliases(headers, [
+      'tên học phần',
+      'ten hoc phan',
+      'course name',
+      'tên hp',
+      'môn học',
+      'mon hoc',
+    ]);
+
+    // Tìm cột học kỳ (optional)
+    const semesterKey = this.findHeaderByAliases(headers, ['học kỳ', 'hoc ky', 'semester', 'học kì', 'hoc ki']);
+
+    // Tìm cột đơn vị giảng dạy (optional)
+    const departmentKey = this.findHeaderByAliases(headers, [
+      'đv giảng dạy',
+      'đơn vị',
+      'đơn vị giảng dạy',
+      'don vi giang day',
+      'department',
+      'khoa',
+      'viện',
+    ]);
+
+    // Tìm cột loại lớp (optional)
+    const classTypeKey = this.findHeaderByAliases(headers, ['loại lớp', 'loai lop', 'class type', 'type', 'loại']);
+
+    // Tìm cột giảng viên (optional)
+    const instructorKey = this.findHeaderByAliases(headers, [
+      'giảng viên',
+      'giang vien',
+      'gv giảng dạy',
+      'instructor',
+      'teacher',
+      'giáo viên',
+      'giao vien',
+    ]);
+
+    const requestedMode: ImportMappingMode = options.mappingMode === 'manual' ? 'manual' : 'auto';
+    const hasManualMapping = Boolean(options.mssvColumn && options.nameColumn);
+
+    let mappingModeUsed: ImportMappingMode;
+    let mssvKey: string | undefined;
+    let nameKey: string | undefined;
+
+    if (requestedMode === 'manual' && hasManualMapping) {
+      const resolvedMssv = this.findHeaderKey(headers, this.cleanCellValue(options.mssvColumn));
+      const resolvedName = this.findHeaderKey(headers, this.cleanCellValue(options.nameColumn));
+
+      if (!resolvedMssv) {
+        this.assertInvalidColumnMapping('Cột MSSV không tồn tại trong file');
+      }
+      if (!resolvedName) {
+        this.assertInvalidColumnMapping('Cột Họ và tên không tồn tại trong file');
+      }
+
+      if (this.normalizeForCompare(resolvedMssv) === this.normalizeForCompare(resolvedName)) {
+        this.assertInvalidColumnMapping('Cột MSSV và cột Họ và tên không được trùng nhau');
+      }
+
+      mappingModeUsed = 'manual';
+      mssvKey = resolvedMssv;
+      nameKey = resolvedName;
+    } else {
+      mssvKey = this.findHeaderByAliases(headers, ['mssv', 'mã số sinh viên', 'ma so sinh vien', 'student id']);
+      nameKey = this.findHeaderByAliases(headers, [
+        'họ và tên',
+        'họ tên',
+        'ho va ten',
+        'ho ten',
+        'họ và tên sv',
+        'họ và tên sinh viên',
+        'name',
+        'fullname',
+        'full name',
+      ]);
+
+      if (!mssvKey || !nameKey) {
+        this.assertInvalidColumnMapping('Không thể tự động nhận diện đầy đủ cột MSSV và Họ và tên');
+      }
+
+      if (this.normalizeForCompare(mssvKey) === this.normalizeForCompare(nameKey)) {
+        this.assertInvalidColumnMapping('Cột MSSV và cột Họ và tên không được trùng nhau');
+      }
+
+      mappingModeUsed = 'auto';
+    }
 
     // Lấy thông tin lớp (lấy từ dòng đầu tiên)
-    const classCode = classCodeKey ? String(firstRow[classCodeKey] || '').trim() : '';
+    const classCode = classCodeKey ? this.cleanCellValue(firstRow[classCodeKey]) : '';
     if (!classCode) {
       throw new BadRequestException(
         'Không tìm thấy cột Mã lớp trong file. Vui lòng đảm bảo có cột tên "Mã lớp", "ma lop" hoặc "class code"',
       );
     }
 
-    const courseCode = courseCodeKey ? String(firstRow[courseCodeKey] || '').trim() : undefined;
-    const courseName = courseNameKey ? String(firstRow[courseNameKey] || '').trim() : undefined;
-    const semester = semesterKey ? String(firstRow[semesterKey] || '').trim() : undefined;
-    const department = departmentKey ? String(firstRow[departmentKey] || '').trim() : undefined;
-    const classType = classTypeKey ? String(firstRow[classTypeKey] || '').trim() : undefined;
-    const instructor = instructorKey ? String(firstRow[instructorKey] || '').trim() : undefined;
+    const courseCode = courseCodeKey ? this.cleanCellValue(firstRow[courseCodeKey]) || undefined : undefined;
+    const courseName = courseNameKey ? this.cleanCellValue(firstRow[courseNameKey]) || undefined : undefined;
+    const semester = semesterKey ? this.cleanCellValue(firstRow[semesterKey]) || undefined : undefined;
+    const department = departmentKey ? this.cleanCellValue(firstRow[departmentKey]) || undefined : undefined;
+    const classType = classTypeKey ? this.cleanCellValue(firstRow[classTypeKey]) || undefined : undefined;
+    const instructor = instructorKey ? this.cleanCellValue(firstRow[instructorKey]) || undefined : undefined;
 
     // Trích xuất danh sách sinh viên
-    const students = data
-      .map((row) => {
-        const mssv = String(row[mssvKey] || '').trim();
-        if (!mssv) return null;
+    const seenMssv = new Set<string>();
+    const students: Student[] = [];
+    let skippedRows = 0;
 
-        const student: Student = { mssv };
+    filteredRows.forEach((row) => {
+      const mssv = this.cleanCellValue(row[mssvKey]);
+      const name = this.cleanCellValue(row[nameKey]);
 
-        if (nameKey) {
-          const name = String(row[nameKey] || '').trim();
-          if (name) {
-            student.name = name;
-          }
-        }
+      if (!mssv && !name) {
+        skippedRows += 1;
+        return;
+      }
 
-        return student;
-      })
-      .filter((student): student is Student => student !== null);
+      if (!mssv) {
+        skippedRows += 1;
+        return;
+      }
+
+      if (!this.isValidMssv(mssv)) {
+        skippedRows += 1;
+        return;
+      }
+
+      if (seenMssv.has(mssv)) {
+        skippedRows += 1;
+        return;
+      }
+
+      seenMssv.add(mssv);
+
+      const student: Student = {
+        mssv,
+      };
+
+      if (name) {
+        student.name = name;
+      }
+
+      students.push(student);
+    });
+
+    const totalRowsRead = filteredRows.length;
+    const importedRows = students.length;
+
+    if (importedRows === 0) {
+      throw new BadRequestException('Không tìm thấy sinh viên hợp lệ sau khi áp dụng mapping cột');
+    }
+
+    const resolvedMapping: ResolvedImportMapping = {
+      mssvColumn: mssvKey,
+      nameColumn: nameKey,
+      startRow,
+    };
 
     return {
       classInfo: {
@@ -495,6 +733,13 @@ export class ClassesService {
         instructor,
       },
       students,
+      mappingModeUsed,
+      resolvedMapping,
+      stats: {
+        totalRowsRead,
+        skippedRows,
+        importedRows,
+      },
     };
   }
 }

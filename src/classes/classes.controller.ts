@@ -2,6 +2,7 @@
 
 import {
   Controller,
+  Body,
   Get,
   Post,
   Delete,
@@ -57,9 +58,20 @@ export class ClassesController {
   })
   @ApiResponse({ status: 201, description: 'Import thành công' })
   @ApiResponse({ status: 400, description: 'File không hợp lệ hoặc thiếu cột MSSV' })
-  async importClass(@UploadedFile() file: Express.Multer.File, @Req() req: any) {
+  async importClass(@UploadedFile() file: Express.Multer.File, @Body() body: ImportClassDto, @Req() req: any) {
     const userId = this.extractUserId(req);
-    return await this.classesService.importClass(file, userId);
+    const mappingMode = body.mappingMode === 'manual' ? 'manual' : 'auto';
+    const startRowValue =
+      body.startRow !== undefined && body.startRow !== null && String(body.startRow).trim() !== ''
+        ? Number(body.startRow)
+        : undefined;
+
+    return await this.classesService.importClass(file, userId, {
+      mssvColumn: body.mssvColumn,
+      nameColumn: body.nameColumn,
+      startRow: startRowValue,
+      mappingMode,
+    });
   }
 
   @Get(':id')
