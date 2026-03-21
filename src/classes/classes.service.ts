@@ -7,6 +7,7 @@ import {
   ForbiddenException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import axios from 'axios';
 import * as XLSX from 'xlsx';
 import csvParser from 'csv-parser';
 import { Readable } from 'stream';
@@ -37,6 +38,42 @@ type ResolvedImportMapping = {
   mssvColumn: string;
   nameColumn: string;
   startRow: number;
+};
+
+type ImportClassResult = {
+  success: boolean;
+  classId: string;
+  message: string;
+  mappingModeUsed: ImportMappingMode;
+  resolvedMapping: ResolvedImportMapping;
+  stats: {
+    totalRowsRead: number;
+    skippedRows: number;
+    importedRows: number;
+  };
+};
+
+type PersistImportPayload = {
+  userId: string;
+  classInfo: {
+    classCode: string;
+    courseCode?: string;
+    courseName?: string;
+    semester?: string;
+    department?: string;
+    classType?: string;
+    instructor?: string;
+  };
+  students: Student[];
+  sourceType: SourceType;
+  sourceName: string;
+  mappingModeUsed: ImportMappingMode;
+  resolvedMapping: ResolvedImportMapping;
+  stats: {
+    totalRowsRead: number;
+    skippedRows: number;
+    importedRows: number;
+  };
 };
 
 @Injectable()
@@ -99,6 +136,114 @@ export class ClassesService {
       default:
         return SourceType.EXCEL;
     }
+  }
+
+  private parseGoogleSheetLink(googleSheetUrl: string): { spreadsheetId: string; gid: string } {
+    const normalizedUrl = googleSheetUrl.trim();
+    if (!normalizedUrl) {
+      throw new BadRequestException('URL Google Sheet không được để trống');
+    }
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(normalizedUrl);
+    } catch {
+      throw new BadRequestException('URL Google Sheet không hợp lệ');
+    }
+
+    if (parsedUrl.hostname !== 'docs.google.com') {
+      throw new BadRequestException('Chỉ hỗ trợ URL thuộc domain docs.google.com');
+    }
+
+    const match = parsedUrl.pathname.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    const spreadsheetId = match?.[1];
+    if (!spreadsheetId) {
+      throw new BadRequestException('Không tìm thấy spreadsheetId trong URL Google Sheet');
+    }
+
+    const gid = parsedUrl.searchParams.get('gid')?.trim() || '0';
+    return { spreadsheetId, gid };
+  }
+
+  private buildGoogleSheetCsvExportUrl(spreadsheetId: string, gid: string): string {
+    return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${encodeURIComponent(gid)}`;
+  }
+
+  private async downloadGoogleSheetCsvBuffer(csvExportUrl: string): Promise<Buffer> {
+    try {
+      const response = await axios.get<ArrayBuffer>(csvExportUrl, {
+        responseType: 'arraybuffer',
+        timeout: 15000,
+      });
+
+      const contentType = String(response.headers['content-type'] ?? '').toLowerCase();
+      if (contentType.includes('text/html')) {
+        throw new BadRequestException(
+          'Không thể truy cập Google Sheet dưới dạng CSV. Vui lòng chia sẻ sheet ở chế độ có thể xem bằng link.',
+        );
+      }
+
+      return Buffer.from(response.data);
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        'Không thể tải dữ liệu từ Google Sheet. Vui lòng kiểm tra link và quyền truy cập của sheet.',
+      );
+    }
+  }
+
+  private async persistImportedClass(payload: PersistImportPayload): Promise<ImportClassResult> {
+    const classEntity = this.classesRepository.create({
+      userId: payload.userId,
+      classCode: payload.classInfo.classCode,
+      courseCode: payload.classInfo.courseCode ?? null,
+      courseName: payload.classInfo.courseName ?? null,
+      semester: payload.classInfo.semester ?? null,
+      department: payload.classInfo.department ?? null,
+      classType: payload.classInfo.classType ?? null,
+      instructor: payload.classInfo.instructor ?? null,
+    });
+
+    const savedClass = await this.classesRepository.save(classEntity);
+
+    const studentEntities = payload.students.map((student, index) =>
+      this.studentsRepository.create({
+        classId: savedClass.id,
+        mssv: student.mssv,
+        importOrder: index,
+        fullName: student.name ?? null,
+      }),
+    );
+
+    if (studentEntities.length > 0) {
+      await this.studentsRepository.save(studentEntities);
+    }
+
+    const history = this.importHistoryRepository.create({
+      classId: savedClass.id,
+      userId: payload.userId,
+      sourceType: payload.sourceType,
+      sourceName: payload.sourceName,
+      totalCount: payload.students.length,
+      columnMapping: {
+        mappingModeUsed: payload.mappingModeUsed,
+        resolvedMapping: payload.resolvedMapping,
+        stats: payload.stats,
+      },
+    });
+
+    await this.importHistoryRepository.save(history);
+
+    return {
+      success: true,
+      classId: savedClass.id,
+      message: `Đã import thành công lớp "${payload.classInfo.classCode}" với ${payload.students.length} sinh viên`,
+      mappingModeUsed: payload.mappingModeUsed,
+      resolvedMapping: payload.resolvedMapping,
+      stats: payload.stats,
+    };
   }
 
   private findHeaderKey(headers: string[], requestedHeader: string): string | undefined {
@@ -281,18 +426,7 @@ export class ClassesService {
     file: Express.Multer.File,
     userId: string,
     options?: ImportClassOptions,
-  ): Promise<{
-    success: boolean;
-    classId: string;
-    message: string;
-    mappingModeUsed: ImportMappingMode;
-    resolvedMapping: ResolvedImportMapping;
-    stats: {
-      totalRowsRead: number;
-      skippedRows: number;
-      importedRows: number;
-    };
-  }> {
+  ): Promise<ImportClassResult> {
     if (!file) {
       throw new BadRequestException('Không có file nào được upload');
     }
@@ -341,55 +475,16 @@ export class ClassesService {
       }
 
       try {
-        const classEntity = this.classesRepository.create({
+        return await this.persistImportedClass({
           userId,
-          classCode: classInfo.classCode,
-          courseCode: classInfo.courseCode ?? null,
-          courseName: classInfo.courseName ?? null,
-          semester: classInfo.semester ?? null,
-          department: classInfo.department ?? null,
-          classType: classInfo.classType ?? null,
-          instructor: classInfo.instructor ?? null,
-        });
-
-        const savedClass = await this.classesRepository.save(classEntity);
-
-        const studentEntities = students.map((s, index) =>
-          this.studentsRepository.create({
-            classId: savedClass.id,
-            mssv: s.mssv,
-            importOrder: index,
-            fullName: (s as any).name ?? null,
-          }),
-        );
-
-        if (studentEntities.length > 0) {
-          await this.studentsRepository.save(studentEntities);
-        }
-
-        const history = this.importHistoryRepository.create({
-          classId: savedClass.id,
-          userId,
+          classInfo,
+          students,
           sourceType: this.inferSourceType(fileExtension),
           sourceName: file.originalname,
-          totalCount: students.length,
-          columnMapping: {
-            mappingModeUsed,
-            resolvedMapping,
-            stats,
-          },
-        });
-
-        await this.importHistoryRepository.save(history);
-
-        return {
-          success: true,
-          classId: savedClass.id,
-          message: `Đã import thành công lớp "${classInfo.classCode}" với ${students.length} sinh viên`,
           mappingModeUsed,
           resolvedMapping,
           stats,
-        };
+        });
       } catch (error) {
         if (error instanceof BadRequestException) {
           throw error;
@@ -407,6 +502,63 @@ export class ClassesService {
         throw error;
       }
       throw new BadRequestException(`Lỗi khi xử lý file: ${error.message}`);
+    }
+  }
+
+  /**
+   * Import lớp học từ URL Google Sheet
+   */
+  async importFromGoogleSheet(
+    googleSheetUrl: string,
+    userId: string,
+    options?: ImportClassOptions,
+  ): Promise<ImportClassResult> {
+    const startRow = options?.startRow ?? 2;
+    if (!Number.isInteger(startRow) || startRow < 1) {
+      this.assertInvalidColumnMapping('startRow phải là số nguyên lớn hơn hoặc bằng 1', 'bad-request');
+    }
+
+    const { spreadsheetId, gid } = this.parseGoogleSheetLink(googleSheetUrl);
+    const csvExportUrl = this.buildGoogleSheetCsvExportUrl(spreadsheetId, gid);
+    const csvBuffer = await this.downloadGoogleSheetCsvBuffer(csvExportUrl);
+    const parsedData = await this.parseCsvFile(csvBuffer);
+
+    if (parsedData.rows.length === 0) {
+      throw new BadRequestException('Google Sheet không chứa dữ liệu');
+    }
+
+    const { classInfo, students, mappingModeUsed, resolvedMapping, stats } = this.extractClassData(
+      parsedData.rows,
+      parsedData.headers,
+      {
+        ...options,
+        startRow,
+      },
+    );
+
+    if (students.length === 0) {
+      throw new BadRequestException('Không tìm thấy sinh viên nào trong Google Sheet');
+    }
+
+    try {
+      return await this.persistImportedClass({
+        userId,
+        classInfo,
+        students,
+        sourceType: SourceType.GOOGLE_SHEET,
+        sourceName: googleSheetUrl,
+        mappingModeUsed,
+        resolvedMapping,
+        stats,
+      });
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      if (error instanceof UnprocessableEntityException) {
+        throw error;
+      }
+      throw new BadRequestException(`Lỗi khi import từ Google Sheet: ${error.message}`);
     }
   }
 
