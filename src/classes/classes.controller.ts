@@ -20,6 +20,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody, ApiParam, Api
 import { ClassesService } from './classes.service';
 import type { Class, Student, ClassWithStudents } from '../common/types';
 import { ImportClassDto } from './dto/import-class.dto';
+import { ImportGoogleSheetDto } from './dto/import-google-sheet.dto';
 
 @ApiTags('classes')
 @ApiBearerAuth('bearer')
@@ -67,6 +68,31 @@ export class ClassesController {
         : undefined;
 
     return await this.classesService.importClass(file, userId, {
+      mssvColumn: body.mssvColumn,
+      nameColumn: body.nameColumn,
+      startRow: startRowValue,
+      mappingMode,
+    });
+  }
+
+  @Post('import-from-sheet')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Import lớp học mới từ URL Google Sheet' })
+  @ApiBody({
+    description: 'Dán URL Google Sheet chứa thông tin lớp và danh sách sinh viên',
+    type: ImportGoogleSheetDto,
+  })
+  @ApiResponse({ status: 201, description: 'Import thành công' })
+  @ApiResponse({ status: 400, description: 'URL Google Sheet không hợp lệ hoặc thiếu cột MSSV' })
+  async importFromGoogleSheet(@Body() body: ImportGoogleSheetDto, @Req() req: any) {
+    const userId = this.extractUserId(req);
+    const mappingMode = body.mappingMode === 'manual' ? 'manual' : 'auto';
+    const startRowValue =
+      body.startRow !== undefined && body.startRow !== null && String(body.startRow).trim() !== ''
+        ? Number(body.startRow)
+        : undefined;
+
+    return await this.classesService.importFromGoogleSheet(body.googleSheetUrl, userId, {
       mssvColumn: body.mssvColumn,
       nameColumn: body.nameColumn,
       startRow: startRowValue,
