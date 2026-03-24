@@ -7,20 +7,32 @@ import {
   Post,
   Delete,
   Param,
+  Query,
   UseInterceptors,
   UploadedFile,
   HttpCode,
   HttpStatus,
   Req,
   UnauthorizedException,
+  BadRequestException,
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiConsumes,
+  ApiBody,
+  ApiParam,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { ClassesService } from './classes.service';
 import type { Class, Student, ClassWithStudents } from '../common/types';
 import { ImportClassDto } from './dto/import-class.dto';
 import { ImportGoogleSheetDto } from './dto/import-google-sheet.dto';
+import { SourceType } from '../entities/import-history.entity';
 
 @ApiTags('classes')
 @ApiBearerAuth('bearer')
@@ -41,11 +53,51 @@ export class ClassesController {
     return userId;
   }
 
+  private parsePositiveInt(input: string | undefined, fallback: number): number {
+    if (input === undefined || input === null || input === '') {
+      return fallback;
+    }
+    const value = Number(input);
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new BadRequestException('Giá trị page/limit phải là số nguyên dương');
+    }
+    return value;
+  }
+
+  private parseSourceType(input?: string): SourceType | undefined {
+    if (!input) return undefined;
+    const normalized = input.trim().toLowerCase();
+    if (normalized === SourceType.EXCEL) return SourceType.EXCEL;
+    if (normalized === SourceType.GOOGLE_SHEET) return SourceType.GOOGLE_SHEET;
+    if (normalized === SourceType.ONEDRIVE) return SourceType.ONEDRIVE;
+    throw new BadRequestException('sourceType không hợp lệ. Giá trị hợp lệ: excel, google_sheet, onedrive');
+  }
+
   @Get()
   @ApiOperation({ summary: 'Lấy danh sách tất cả các lớp' })
   @ApiResponse({ status: 200, description: 'Trả về danh sách các lớp' })
   async findAll(): Promise<Array<Class & { studentCount: number }>> {
     return this.classesService.findAllWithStudentCount();
+  }
+
+  @Get('import-history')
+  @ApiOperation({ summary: 'Lấy lịch sử import của người dùng hiện tại' })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 20 })
+  @ApiQuery({ name: 'sourceType', required: false, enum: ['excel', 'google_sheet', 'onedrive'] })
+  @ApiResponse({ status: 200, description: 'Trả về danh sách lịch sử import có phân trang' })
+  async getImportHistory(
+    @Req() req: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sourceType') sourceType?: string,
+  ) {
+    const userId = this.extractUserId(req);
+    return this.classesService.getImportHistoryByUser(userId, {
+      page: this.parsePositiveInt(page, 1),
+      limit: this.parsePositiveInt(limit, 20),
+      sourceType: this.parseSourceType(sourceType),
+    });
   }
 
   @Post('import')
