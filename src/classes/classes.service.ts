@@ -391,10 +391,11 @@ export class ClassesService {
   /**
    * Lấy tất cả các lớp kèm số lượng sinh viên
    */
-  async findAllWithStudentCount(): Promise<Array<Class & { studentCount: number }>> {
+  async findAllWithStudentCount(userId: string): Promise<Array<Class & { studentCount: number }>> {
     const rows = await this.classesRepository
       .createQueryBuilder('c')
       .leftJoin('c.students', 's')
+      .where('c.userId = :userId', { userId })
       .select('c.id', 'id')
       .addSelect('c.classCode', 'classCode')
       .addSelect('c.courseCode', 'courseCode')
@@ -437,11 +438,11 @@ export class ClassesService {
   /**
    * Lấy thông tin một lớp theo ID (không bao gồm danh sách sinh viên)
    */
-  async findOne(id: string): Promise<Class> {
-    const entity = await this.classesRepository.findOne({ where: { id } });
+  async findOne(id: string, userId: string): Promise<Class> {
+    const entity = await this.classesRepository.findOne({ where: { id, userId } });
 
     if (!entity) {
-      throw new NotFoundException(`Không tìm thấy lớp với ID ${id}`);
+      throw new NotFoundException(`Không tìm thấy lớp với ID ${id} thuộc về người dùng hiện tại`);
     }
 
     return {
@@ -460,9 +461,9 @@ export class ClassesService {
   /**
    * Lấy thông tin một lớp kèm danh sách sinh viên
    */
-  async findOneWithStudents(id: string): Promise<ClassWithStudents> {
-    const classItem = await this.findOne(id);
-    const students = await this.getStudents(id);
+  async findOneWithStudents(id: string, userId: string): Promise<ClassWithStudents> {
+    const classItem = await this.findOne(id, userId);
+    const students = await this.getStudents(id, userId);
     return {
       ...classItem,
       students,
@@ -472,7 +473,9 @@ export class ClassesService {
   /**
    * Lấy danh sách sinh viên của một lớp
    */
-  async getStudents(classId: string): Promise<Student[]> {
+  async getStudents(classId: string, userId: string): Promise<Student[]> {
+    await this.findOne(classId, userId);
+
     const entities = await this.studentsRepository.find({
       where: { classId },
       order: { importOrder: 'ASC' },

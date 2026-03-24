@@ -76,8 +76,9 @@ export class ClassesController {
   @Get()
   @ApiOperation({ summary: 'Lấy danh sách tất cả các lớp' })
   @ApiResponse({ status: 200, description: 'Trả về danh sách các lớp' })
-  async findAll(): Promise<Array<Class & { studentCount: number }>> {
-    return this.classesService.findAllWithStudentCount();
+  async findAll(@Req() req: any): Promise<Array<Class & { studentCount: number }>> {
+    const userId = this.extractUserId(req);
+    return this.classesService.findAllWithStudentCount(userId);
   }
 
   @Get('import-history')
@@ -157,8 +158,9 @@ export class ClassesController {
   @ApiParam({ name: 'id', description: 'ID của lớp' })
   @ApiResponse({ status: 200, description: 'Trả về thông tin lớp kèm danh sách sinh viên' })
   @ApiResponse({ status: 404, description: 'Không tìm thấy lớp' })
-  async findOne(@Param('id', new ParseUUIDPipe()) id: string): Promise<ClassWithStudents> {
-    return this.classesService.findOneWithStudents(id);
+  async findOne(@Param('id', new ParseUUIDPipe()) id: string, @Req() req: any): Promise<ClassWithStudents> {
+    const userId = this.extractUserId(req);
+    return this.classesService.findOneWithStudents(id, userId);
   }
 
   @Get(':id/students')
@@ -166,8 +168,9 @@ export class ClassesController {
   @ApiParam({ name: 'id', description: 'ID của lớp' })
   @ApiResponse({ status: 200, description: 'Trả về danh sách sinh viên' })
   @ApiResponse({ status: 404, description: 'Không tìm thấy lớp' })
-  async getStudents(@Param('id', new ParseUUIDPipe()) id: string): Promise<Student[]> {
-    return this.classesService.getStudents(id);
+  async getStudents(@Param('id', new ParseUUIDPipe()) id: string, @Req() req: any): Promise<Student[]> {
+    const userId = this.extractUserId(req);
+    return this.classesService.getStudents(id, userId);
   }
 
   @Delete(':id')

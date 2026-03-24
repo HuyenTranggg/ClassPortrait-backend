@@ -22,12 +22,16 @@ export class AuthService {
     const { email, password } = dto;
     const normalizedEmail = email.trim().toLowerCase();
 
-    // 1. Tài khoản admin nội bộ (lưu trong .env, dùng để test khi không có tài khoản giảng viên)
-    const adminEmail = (this.configService.get<string>('ADMIN_EMAIL') ?? '').trim().toLowerCase();
-    const adminPassword = this.configService.get<string>('ADMIN_PASSWORD') ?? '';
-    if (adminEmail && normalizedEmail === adminEmail && password === adminPassword) {
+    // 1. Tài khoản nội bộ (lưu trong .env, dùng để test khi không có tài khoản giảng viên)
+    const matchedInternalAccount = this.findMatchedInternalAccount(normalizedEmail, password);
+    if (matchedInternalAccount) {
       const userId = await this.upsertUser(normalizedEmail);
-      const access_token = this.jwtService.sign({ sub: userId, userId, email: normalizedEmail, role: 'admin' });
+      const access_token = this.jwtService.sign({
+        sub: userId,
+        userId,
+        email: normalizedEmail,
+        role: matchedInternalAccount.role,
+      });
       return { access_token };
     }
 
@@ -46,6 +50,55 @@ export class AuthService {
     const userId = await this.upsertUser(normalizedEmail);
     const access_token = this.jwtService.sign({ sub: userId, userId, email: normalizedEmail, role: 'lecturer' });
     return { access_token };
+  }
+
+  private findMatchedInternalAccount(normalizedEmail: string, password: string): {
+    email: string;
+    password: string;
+    role: 'admin';
+  } | null {
+    const accounts = this.getInternalAccountsFromEnv();
+    return accounts.find((account) => account.email === normalizedEmail && account.password === password) ?? null;
+  }
+
+  private getInternalAccountsFromEnv(): Array<{ email: string; password: string; role: 'admin' }> {
+    const pairs = [
+      {
+        email: this.configService.get<string>('ADMIN_EMAIL') ?? '',
+        password: this.configService.get<string>('ADMIN_PASSWORD') ?? '',
+      },
+      {
+        email: this.configService.get<string>('ADMIN_EMAIL_2') ?? '',
+        password: this.configService.get<string>('ADMIN_PASSWORD_2') ?? '',
+      },
+    ];
+
+    const parsedFromList = this.parseAdminAccountsList(this.configService.get<string>('ADMIN_ACCOUNTS'));
+
+    return [...pairs, ...parsedFromList]
+      .map((item) => ({
+        email: item.email.trim().toLowerCase(),
+        password: item.password,
+        role: 'admin' as const,
+      }))
+      .filter((item) => item.email.length > 0 && item.password.length > 0);
+  }
+
+  private parseAdminAccountsList(value?: string): Array<{ email: string; password: string }> {
+    if (!value) return [];
+
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+      .map((item) => {
+        const [emailPart, ...passwordParts] = item.split(':');
+        return {
+          email: (emailPart ?? '').trim(),
+          password: passwordParts.join(':').trim(),
+        };
+      })
+      .filter((item) => item.email.length > 0 && item.password.length > 0);
   }
 
   private async upsertUser(email: string): Promise<string> {
