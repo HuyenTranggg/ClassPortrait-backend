@@ -53,6 +53,32 @@ type ImportClassResult = {
   };
 };
 
+type ImportHistoryItem = {
+  id: string;
+  classId: string;
+  classCode: string;
+  courseCode?: string;
+  courseName?: string;
+  semester?: string;
+  sourceType: SourceType;
+  sourceName: string;
+  totalCount: number;
+  importedRows: number;
+  skippedRows: number;
+  mappingModeUsed?: ImportMappingMode;
+  createdAt: Date;
+};
+
+type ImportHistoryListResult = {
+  data: ImportHistoryItem[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+};
+
 type PersistImportPayload = {
   userId: string;
   classInfo: {
@@ -94,6 +120,68 @@ export class ClassesService {
     const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 7;
     const signature = signPhotoUrl(mssv, classId, expiresAt);
     return `${baseUrl.replace(/\/$/, '')}/students/${encodeURIComponent(mssv)}/photo?classId=${encodeURIComponent(classId)}&exp=${expiresAt}&sig=${signature}`;
+  }
+
+  async getImportHistoryByUser(
+    userId: string,
+    options?: {
+      page?: number;
+      limit?: number;
+      sourceType?: SourceType;
+    },
+  ): Promise<ImportHistoryListResult> {
+    const page = Math.max(1, options?.page ?? 1);
+    const limit = Math.min(100, Math.max(1, options?.limit ?? 20));
+
+    const queryBuilder = this.importHistoryRepository
+      .createQueryBuilder('history')
+      .innerJoinAndSelect('history.classEntity', 'classEntity')
+      .where('history.userId = :userId', { userId });
+
+    if (options?.sourceType) {
+      queryBuilder.andWhere('history.sourceType = :sourceType', {
+        sourceType: options.sourceType,
+      });
+    }
+
+    const [histories, total] = await queryBuilder
+      .orderBy('history.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    const data: ImportHistoryItem[] = histories.map((history) => {
+      const mapping = history.columnMapping ?? {};
+      const stats = mapping.stats ?? {};
+      const importedRows = Number(stats.importedRows ?? history.totalCount);
+      const skippedRows = Number(stats.skippedRows ?? Math.max(0, history.totalCount - importedRows));
+
+      return {
+        id: history.id,
+        classId: history.classId,
+        classCode: history.classEntity?.classCode ?? '',
+        courseCode: history.classEntity?.courseCode ?? undefined,
+        courseName: history.classEntity?.courseName ?? undefined,
+        semester: history.classEntity?.semester ?? undefined,
+        sourceType: history.sourceType,
+        sourceName: history.sourceName,
+        totalCount: history.totalCount,
+        importedRows,
+        skippedRows,
+        mappingModeUsed: mapping.mappingModeUsed,
+        createdAt: history.createdAt,
+      };
+    });
+
+    return {
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    };
   }
 
   private normalizeForCompare(value: string): string {
