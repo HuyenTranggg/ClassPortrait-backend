@@ -17,7 +17,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { ClassEntity } from '../entities/class.entity';
 import { StudentEntity } from '../entities/student.entity';
-import { ImportHistoryEntity, SourceType } from '../entities/import-history.entity';
+import { ImportAction, ImportChangesSummary, ImportHistoryEntity, SourceType } from '../entities/import-history.entity';
 import { signPhotoUrl } from '../common/utils/photo-signature.util';
 
 type ImportMappingMode = 'auto' | 'manual';
@@ -84,24 +84,16 @@ type ImportDuplicateDecisionPayload = {
     studentCount: number;
     createdAt: Date;
   };
-  changes: {
-    classFieldChanges: Array<{
-      field: keyof ClassImportInfo;
-      oldValue?: string;
-      newValue?: string;
-    }>;
-    studentChanges: {
-      added: number;
-      removed: number;
-      renamed: number;
-    };
-  };
+  changes: ImportChangesSummary;
   nextActions: DuplicateAction[];
 };
 
 type ImportHistoryItem = {
   id: string;
   classId: string;
+  action: ImportAction;
+  duplicateDetected: boolean;
+  changesSummary: ImportChangesSummary | null;
   classCode: string;
   courseCode?: string;
   courseName?: string;
@@ -138,6 +130,7 @@ type PersistImportPayload = {
     skippedRows: number;
     importedRows: number;
   };
+  duplicateDetected?: boolean;
 };
 
 @Injectable()
@@ -158,6 +151,29 @@ export class ClassesService {
     const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 7;
     const signature = signPhotoUrl(mssv, classId, expiresAt);
     return `${baseUrl.replace(/\/$/, '')}/students/${encodeURIComponent(mssv)}/photo?classId=${encodeURIComponent(classId)}&exp=${expiresAt}&sig=${signature}`;
+  }
+
+  private normalizeChangesSummary(value: ImportChangesSummary | null | undefined): ImportChangesSummary | null {
+    if (!value) return null;
+
+    const classFieldChanges = Array.isArray(value.classFieldChanges)
+      ? value.classFieldChanges.map((item) => ({
+          field: String(item?.field ?? ''),
+          oldValue: item?.oldValue ? String(item.oldValue) : undefined,
+          newValue: item?.newValue ? String(item.newValue) : undefined,
+        }))
+      : [];
+
+    const studentChanges = {
+      added: Number(value.studentChanges?.added ?? 0),
+      removed: Number(value.studentChanges?.removed ?? 0),
+      renamed: Number(value.studentChanges?.renamed ?? 0),
+    };
+
+    return {
+      classFieldChanges,
+      studentChanges,
+    };
   }
 
   async getImportHistoryByUser(
@@ -197,6 +213,9 @@ export class ClassesService {
       return {
         id: history.id,
         classId: history.classId,
+        action: history.action,
+        duplicateDetected: history.duplicateDetected,
+        changesSummary: this.normalizeChangesSummary(history.changesSummary),
         classCode: history.classEntity?.classCode ?? '',
         courseCode: history.classEntity?.courseCode ?? undefined,
         courseName: history.classEntity?.courseName ?? undefined,
@@ -350,6 +369,8 @@ export class ClassesService {
     const history = this.importHistoryRepository.create({
       classId: savedClass.id,
       userId: payload.userId,
+      action: ImportAction.CREATED,
+      duplicateDetected: payload.duplicateDetected ?? false,
       sourceType: payload.sourceType,
       sourceName: payload.sourceName,
       totalCount: payload.students.length,
@@ -358,6 +379,7 @@ export class ClassesService {
         resolvedMapping: payload.resolvedMapping,
         stats: payload.stats,
       },
+      changesSummary: null,
     });
 
     await this.importHistoryRepository.save(history);
@@ -396,7 +418,11 @@ export class ClassesService {
     return candidates[0] ?? null;
   }
 
-  private buildImportChanges(existingClass: ClassEntity, classInfo: ClassImportInfo, newStudents: Student[]) {
+  private buildImportChanges(
+    existingClass: ClassEntity,
+    classInfo: ClassImportInfo,
+    newStudents: Student[],
+  ): Promise<ImportChangesSummary> {
     const classFieldChanges: Array<{ field: keyof ClassImportInfo; oldValue?: string; newValue?: string }> = [];
     const fields: Array<keyof ClassImportInfo> = [
       'classCode',
@@ -495,6 +521,13 @@ export class ClassesService {
     classId: string,
     payload: PersistImportPayload,
   ): Promise<ImportClassResult> {
+    const existingClass = await this.classesRepository.findOne({ where: { id: classId, userId: payload.userId } });
+    if (!existingClass) {
+      throw new NotFoundException(`Không tìm thấy lớp với ID ${classId} thuộc về người dùng hiện tại`);
+    }
+
+    const changesSummary = await this.buildImportChanges(existingClass, payload.classInfo, payload.students);
+
     await this.classesRepository.manager.transaction(async (manager) => {
       await manager.getRepository(ClassEntity).update(
         { id: classId, userId: payload.userId },
@@ -527,6 +560,8 @@ export class ClassesService {
       const history = manager.getRepository(ImportHistoryEntity).create({
         classId,
         userId: payload.userId,
+        action: ImportAction.UPDATED,
+        duplicateDetected: true,
         sourceType: payload.sourceType,
         sourceName: payload.sourceName,
         totalCount: payload.students.length,
@@ -536,6 +571,7 @@ export class ClassesService {
           stats: payload.stats,
           updateMode: 'updated_existing',
         },
+        changesSummary,
       });
 
       await manager.getRepository(ImportHistoryEntity).save(history);
@@ -560,7 +596,10 @@ export class ClassesService {
     const duplicateAction: DuplicateAction = options?.duplicateAction ?? 'ask';
 
     if (!duplicateClass || duplicateAction === 'create_new') {
-      return this.persistImportedClass(payload);
+      return this.persistImportedClass({
+        ...payload,
+        duplicateDetected: Boolean(duplicateClass && duplicateAction === 'create_new'),
+      });
     }
 
     if (options?.targetClassId && options.targetClassId !== duplicateClass.id) {
