@@ -15,6 +15,26 @@ export enum SourceType {
   ONEDRIVE = 'onedrive',
 }
 
+export enum ImportAction {
+  CREATED = 'created',
+  UPDATED = 'updated',
+}
+
+export type ImportClassFieldChangeSummary = {
+  field: string;
+  oldValue?: string;
+  newValue?: string;
+};
+
+export type ImportChangesSummary = {
+  classFieldChanges: ImportClassFieldChangeSummary[];
+  studentChanges: {
+    added: number;
+    removed: number;
+    renamed: number;
+  };
+};
+
 @Entity('import_history')
 export class ImportHistoryEntity {
   @PrimaryGeneratedColumn('uuid')
@@ -35,6 +55,18 @@ export class ImportHistoryEntity {
   userId!: string;
 
   @Column({
+    name: 'action',
+    type: 'enum',
+    enum: ImportAction,
+    enumName: 'import_action_enum',
+    default: ImportAction.CREATED,
+  })
+  action!: ImportAction;
+
+  @Column({ name: 'duplicate_detected', type: 'boolean', default: false })
+  duplicateDetected!: boolean;
+
+  @Column({
     name: 'source_type',
     type: 'enum',
     enum: SourceType,
@@ -50,6 +82,9 @@ export class ImportHistoryEntity {
 
   @Column({ name: 'column_mapping', type: 'jsonb', nullable: true })
   columnMapping!: Record<string, any> | null;
+
+  @Column({ name: 'changes_summary', type: 'jsonb', nullable: true })
+  changesSummary!: ImportChangesSummary | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
   createdAt!: Date;

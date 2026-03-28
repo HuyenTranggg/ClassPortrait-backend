@@ -15,6 +15,11 @@ CREATE TYPE source_type_enum AS ENUM (
     'onedrive'
 );
 
+CREATE TYPE import_action_enum AS ENUM (
+    'created',
+    'updated'
+);
+
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -68,10 +73,13 @@ CREATE TABLE import_history (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     class_id UUID NOT NULL,
     user_id UUID NOT NULL,
+    action import_action_enum NOT NULL DEFAULT 'created',
+    duplicate_detected BOOLEAN NOT NULL DEFAULT FALSE,
     source_type source_type_enum NOT NULL,
     source_name VARCHAR(500) NOT NULL,
     total_count INT NOT NULL,
     column_mapping JSONB,
+    changes_summary JSONB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_import_class
@@ -84,6 +92,12 @@ CREATE TABLE import_history (
         REFERENCES users(id)
         ON DELETE CASCADE
 );
+
+CREATE INDEX idx_import_history_user_created_at
+    ON import_history (user_id, created_at DESC);
+
+CREATE INDEX idx_import_history_class_created_at
+    ON import_history (class_id, created_at DESC);
 
 CREATE TABLE share_links (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
