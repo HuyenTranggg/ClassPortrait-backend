@@ -125,6 +125,9 @@ export class ClassesController {
       nameColumn: body.nameColumn,
       startRow: startRowValue,
       mappingMode,
+      duplicateAction: body.duplicateAction,
+      confirmUpdate: body.confirmUpdate,
+      targetClassId: body.targetClassId,
     });
   }
 
@@ -150,6 +153,9 @@ export class ClassesController {
       nameColumn: body.nameColumn,
       startRow: startRowValue,
       mappingMode,
+      duplicateAction: body.duplicateAction,
+      confirmUpdate: body.confirmUpdate,
+      targetClassId: body.targetClassId,
     });
   }
 

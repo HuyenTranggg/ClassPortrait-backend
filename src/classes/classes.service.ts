@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -13,19 +14,33 @@ import csvParser from 'csv-parser';
 import { Readable } from 'stream';
 import { Class, Student, ClassWithStudents } from '../common/types';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { ClassEntity } from '../entities/class.entity';
 import { StudentEntity } from '../entities/student.entity';
 import { ImportHistoryEntity, SourceType } from '../entities/import-history.entity';
 import { signPhotoUrl } from '../common/utils/photo-signature.util';
 
 type ImportMappingMode = 'auto' | 'manual';
+type DuplicateAction = 'ask' | 'create_new' | 'update_existing';
+
+type ClassImportInfo = {
+  classCode: string;
+  courseCode?: string;
+  courseName?: string;
+  semester?: string;
+  department?: string;
+  classType?: string;
+  instructor?: string;
+};
 
 type ImportClassOptions = {
   mssvColumn?: string;
   nameColumn?: string;
   startRow?: number;
   mappingMode?: ImportMappingMode;
+  duplicateAction?: DuplicateAction;
+  confirmUpdate?: boolean;
+  targetClassId?: string;
 };
 
 type ParsedImportData = {
@@ -44,6 +59,7 @@ type ImportClassResult = {
   success: boolean;
   classId: string;
   message: string;
+  action: 'created' | 'updated';
   mappingModeUsed: ImportMappingMode;
   resolvedMapping: ResolvedImportMapping;
   stats: {
@@ -51,6 +67,36 @@ type ImportClassResult = {
     skippedRows: number;
     importedRows: number;
   };
+};
+
+type ImportDuplicateDecisionPayload = {
+  code: 'CLASS_ALREADY_EXISTS' | 'UPDATE_CONFIRM_REQUIRED';
+  message: string;
+  duplicateClass: {
+    id: string;
+    classCode: string;
+    courseCode?: string;
+    courseName?: string;
+    semester?: string;
+    department?: string;
+    classType?: string;
+    instructor?: string;
+    studentCount: number;
+    createdAt: Date;
+  };
+  changes: {
+    classFieldChanges: Array<{
+      field: keyof ClassImportInfo;
+      oldValue?: string;
+      newValue?: string;
+    }>;
+    studentChanges: {
+      added: number;
+      removed: number;
+      renamed: number;
+    };
+  };
+  nextActions: DuplicateAction[];
 };
 
 type ImportHistoryItem = {
@@ -81,15 +127,7 @@ type ImportHistoryListResult = {
 
 type PersistImportPayload = {
   userId: string;
-  classInfo: {
-    classCode: string;
-    courseCode?: string;
-    courseName?: string;
-    semester?: string;
-    department?: string;
-    classType?: string;
-    instructor?: string;
-  };
+  classInfo: ClassImportInfo;
   students: Student[];
   sourceType: SourceType;
   sourceName: string;
@@ -328,10 +366,216 @@ export class ClassesService {
       success: true,
       classId: savedClass.id,
       message: `Đã import thành công lớp "${payload.classInfo.classCode}" với ${payload.students.length} sinh viên`,
+      action: 'created',
       mappingModeUsed: payload.mappingModeUsed,
       resolvedMapping: payload.resolvedMapping,
       stats: payload.stats,
     };
+  }
+
+  private normalizeIdentityValue(value?: string | null): string {
+    return this.cleanCellValue(value ?? '').toLowerCase();
+  }
+
+  private async findDuplicateClassByIdentity(userId: string, classInfo: ClassImportInfo): Promise<ClassEntity | null> {
+    const classCode = this.cleanCellValue(classInfo.classCode);
+    const semester = this.cleanCellValue(classInfo.semester);
+
+    // Identity lớp trùng: classCode + semester trong cùng user.
+    const whereClause = semester
+      ? { userId, classCode, semester }
+      : { userId, classCode, semester: IsNull() };
+
+    const candidates = await this.classesRepository.find({
+      where: whereClause,
+      order: { createdAt: 'DESC' },
+    });
+
+    if (candidates.length === 0) return null;
+
+    return candidates[0] ?? null;
+  }
+
+  private buildImportChanges(existingClass: ClassEntity, classInfo: ClassImportInfo, newStudents: Student[]) {
+    const classFieldChanges: Array<{ field: keyof ClassImportInfo; oldValue?: string; newValue?: string }> = [];
+    const fields: Array<keyof ClassImportInfo> = [
+      'classCode',
+      'courseCode',
+      'courseName',
+      'semester',
+      'department',
+      'classType',
+      'instructor',
+    ];
+
+    for (const field of fields) {
+      const oldValue = this.cleanCellValue((existingClass as any)[field] ?? '');
+      const newValue = this.cleanCellValue((classInfo as any)[field] ?? '');
+      if (oldValue !== newValue) {
+        classFieldChanges.push({
+          field,
+          oldValue: oldValue || undefined,
+          newValue: newValue || undefined,
+        });
+      }
+    }
+
+    return this.studentsRepository
+      .find({ where: { classId: existingClass.id } })
+      .then((existingStudents) => {
+        const oldMap = new Map(existingStudents.map((student) => [student.mssv, this.cleanCellValue(student.fullName ?? '')]));
+        const newMap = new Map(newStudents.map((student) => [student.mssv, this.cleanCellValue(student.name ?? '')]));
+
+        let added = 0;
+        let removed = 0;
+        let renamed = 0;
+
+        for (const [mssv, newName] of newMap.entries()) {
+          if (!oldMap.has(mssv)) {
+            added += 1;
+            continue;
+          }
+          if (oldMap.get(mssv) !== newName) {
+            renamed += 1;
+          }
+        }
+
+        for (const mssv of oldMap.keys()) {
+          if (!newMap.has(mssv)) {
+            removed += 1;
+          }
+        }
+
+        return {
+          classFieldChanges,
+          studentChanges: {
+            added,
+            removed,
+            renamed,
+          },
+        };
+      });
+  }
+
+  private async throwDuplicateDecisionPayload(
+    code: ImportDuplicateDecisionPayload['code'],
+    duplicateClass: ClassEntity,
+    classInfo: ClassImportInfo,
+    students: Student[],
+  ): Promise<never> {
+    const changes = await this.buildImportChanges(duplicateClass, classInfo, students);
+    const studentCount = await this.studentsRepository.count({ where: { classId: duplicateClass.id } });
+
+    const payload: ImportDuplicateDecisionPayload = {
+      code,
+      message:
+        code === 'CLASS_ALREADY_EXISTS'
+          ? 'Lớp đã tồn tại. Bạn muốn cập nhật lớp hiện có hay vẫn tạo lớp mới?'
+          : 'Vui lòng xác nhận cập nhật lớp hiện có sau khi xem thay đổi.',
+      duplicateClass: {
+        id: duplicateClass.id,
+        classCode: duplicateClass.classCode,
+        courseCode: duplicateClass.courseCode ?? undefined,
+        courseName: duplicateClass.courseName ?? undefined,
+        semester: duplicateClass.semester ?? undefined,
+        department: duplicateClass.department ?? undefined,
+        classType: duplicateClass.classType ?? undefined,
+        instructor: duplicateClass.instructor ?? undefined,
+        studentCount,
+        createdAt: duplicateClass.createdAt,
+      },
+      changes,
+      nextActions: ['create_new', 'update_existing'],
+    };
+
+    throw new ConflictException(payload);
+  }
+
+  private async updateExistingClassByImport(
+    classId: string,
+    payload: PersistImportPayload,
+  ): Promise<ImportClassResult> {
+    await this.classesRepository.manager.transaction(async (manager) => {
+      await manager.getRepository(ClassEntity).update(
+        { id: classId, userId: payload.userId },
+        {
+          classCode: payload.classInfo.classCode,
+          courseCode: payload.classInfo.courseCode ?? null,
+          courseName: payload.classInfo.courseName ?? null,
+          semester: payload.classInfo.semester ?? null,
+          department: payload.classInfo.department ?? null,
+          classType: payload.classInfo.classType ?? null,
+          instructor: payload.classInfo.instructor ?? null,
+        },
+      );
+
+      await manager.getRepository(StudentEntity).delete({ classId });
+
+      const studentEntities = payload.students.map((student, index) =>
+        manager.getRepository(StudentEntity).create({
+          classId,
+          mssv: student.mssv,
+          importOrder: index,
+          fullName: student.name ?? null,
+        }),
+      );
+
+      if (studentEntities.length > 0) {
+        await manager.getRepository(StudentEntity).save(studentEntities);
+      }
+
+      const history = manager.getRepository(ImportHistoryEntity).create({
+        classId,
+        userId: payload.userId,
+        sourceType: payload.sourceType,
+        sourceName: payload.sourceName,
+        totalCount: payload.students.length,
+        columnMapping: {
+          mappingModeUsed: payload.mappingModeUsed,
+          resolvedMapping: payload.resolvedMapping,
+          stats: payload.stats,
+          updateMode: 'updated_existing',
+        },
+      });
+
+      await manager.getRepository(ImportHistoryEntity).save(history);
+    });
+
+    return {
+      success: true,
+      classId,
+      message: `Đã cập nhật lớp hiện có "${payload.classInfo.classCode}" với ${payload.students.length} sinh viên`,
+      action: 'updated',
+      mappingModeUsed: payload.mappingModeUsed,
+      resolvedMapping: payload.resolvedMapping,
+      stats: payload.stats,
+    };
+  }
+
+  private async persistWithDuplicateHandling(
+    payload: PersistImportPayload,
+    options?: ImportClassOptions,
+  ): Promise<ImportClassResult> {
+    const duplicateClass = await this.findDuplicateClassByIdentity(payload.userId, payload.classInfo);
+    const duplicateAction: DuplicateAction = options?.duplicateAction ?? 'ask';
+
+    if (!duplicateClass || duplicateAction === 'create_new') {
+      return this.persistImportedClass(payload);
+    }
+
+    if (options?.targetClassId && options.targetClassId !== duplicateClass.id) {
+      throw new BadRequestException('targetClassId không khớp với lớp trùng được phát hiện');
+    }
+
+    if (duplicateAction === 'ask') {
+      await this.throwDuplicateDecisionPayload('CLASS_ALREADY_EXISTS', duplicateClass, payload.classInfo, payload.students);
+    }
+
+    if (!options?.confirmUpdate) {
+      await this.throwDuplicateDecisionPayload('UPDATE_CONFIRM_REQUIRED', duplicateClass, payload.classInfo, payload.students);
+    }
+
+    return this.updateExistingClassByImport(duplicateClass.id, payload);
   }
 
   private findHeaderKey(headers: string[], requestedHeader: string): string | undefined {
@@ -566,7 +810,8 @@ export class ClassesService {
       }
 
       try {
-        return await this.persistImportedClass({
+        return await this.persistWithDuplicateHandling(
+          {
           userId,
           classInfo,
           students,
@@ -575,9 +820,14 @@ export class ClassesService {
           mappingModeUsed,
           resolvedMapping,
           stats,
-        });
+          },
+          options,
+        );
       } catch (error) {
         if (error instanceof BadRequestException) {
+          throw error;
+        }
+        if (error instanceof ConflictException) {
           throw error;
         }
         if (error instanceof UnprocessableEntityException) {
@@ -587,6 +837,9 @@ export class ClassesService {
       }
     } catch (error) {
       if (error instanceof BadRequestException) {
+        throw error;
+      }
+      if (error instanceof ConflictException) {
         throw error;
       }
       if (error instanceof UnprocessableEntityException) {
@@ -632,18 +885,24 @@ export class ClassesService {
     }
 
     try {
-      return await this.persistImportedClass({
-        userId,
-        classInfo,
-        students,
-        sourceType: SourceType.GOOGLE_SHEET,
-        sourceName: googleSheetUrl,
-        mappingModeUsed,
-        resolvedMapping,
-        stats,
-      });
+      return await this.persistWithDuplicateHandling(
+        {
+          userId,
+          classInfo,
+          students,
+          sourceType: SourceType.GOOGLE_SHEET,
+          sourceName: googleSheetUrl,
+          mappingModeUsed,
+          resolvedMapping,
+          stats,
+        },
+        options,
+      );
     } catch (error) {
       if (error instanceof BadRequestException) {
+        throw error;
+      }
+      if (error instanceof ConflictException) {
         throw error;
       }
       if (error instanceof UnprocessableEntityException) {

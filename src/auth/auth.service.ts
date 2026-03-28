@@ -9,8 +9,16 @@ import { Repository } from 'typeorm';
 
 const HUST_AUTH_URL = 'https://api.toolhub.app/hust/KiemTraMatKhau';
 
+type FailedLoginAttempt = {
+  count: number;
+  firstFailedAt: number;
+  blockedUntil?: number;
+};
+
 @Injectable()
 export class AuthService {
+  private readonly failedLoginAttempts = new Map<string, FailedLoginAttempt>();
+
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
@@ -18,9 +26,12 @@ export class AuthService {
     private readonly usersRepository: Repository<UserEntity>,
   ) {}
 
-  async login(dto: LoginDto): Promise<{ access_token: string }> {
+  async login(dto: LoginDto, clientIp = 'unknown'): Promise<{ access_token: string }> {
     const { email, password } = dto;
     const normalizedEmail = email.trim().toLowerCase();
+    const throttleKey = this.buildThrottleKey(clientIp, normalizedEmail);
+
+    this.assertLoginNotRateLimited(throttleKey);
 
     // 1. Tài khoản nội bộ (lưu trong .env, dùng để test khi không có tài khoản giảng viên)
     const matchedInternalAccount = this.findMatchedInternalAccount(normalizedEmail, password);
@@ -32,24 +43,87 @@ export class AuthService {
         email: normalizedEmail,
         role: matchedInternalAccount.role,
       });
+      this.clearFailedAttempt(throttleKey);
       return { access_token };
     }
 
     // 2. Tài khoản giảng viên HUST: email phải kết thúc @hust.edu.vn
     if (!/@hust\.edu\.vn$/i.test(normalizedEmail)) {
+      this.recordFailedAttempt(throttleKey);
       throw new UnauthorizedException('Email phải kết thúc bằng @hust.edu.vn');
     }
 
     // 3. Xác thực mật khẩu với API HUST
     const isValid = await this.verifyHustCredentials(normalizedEmail, password);
     if (!isValid) {
+      this.recordFailedAttempt(throttleKey);
       throw new UnauthorizedException('Sai tài khoản hoặc mật khẩu HUST');
     }
 
     // 4. Lưu / cập nhật user và tạo JWT token
     const userId = await this.upsertUser(normalizedEmail);
     const access_token = this.jwtService.sign({ sub: userId, userId, email: normalizedEmail, role: 'lecturer' });
+    this.clearFailedAttempt(throttleKey);
     return { access_token };
+  }
+
+  private getMaxFailedAttempts(): number {
+    const raw = Number(this.configService.get<string>('AUTH_MAX_FAILED_ATTEMPTS') ?? '5');
+    if (!Number.isInteger(raw) || raw <= 0) return 5;
+    return raw;
+  }
+
+  private getBlockDurationMs(): number {
+    const rawMinutes = Number(this.configService.get<string>('AUTH_BLOCK_MINUTES') ?? '10');
+    if (!Number.isFinite(rawMinutes) || rawMinutes <= 0) return 10 * 60 * 1000;
+    return rawMinutes * 60 * 1000;
+  }
+
+  private buildThrottleKey(clientIp: string, normalizedEmail: string): string {
+    return `${clientIp.trim().toLowerCase()}::${normalizedEmail}`;
+  }
+
+  private assertLoginNotRateLimited(throttleKey: string): void {
+    const now = Date.now();
+    const attempt = this.failedLoginAttempts.get(throttleKey);
+    if (!attempt || !attempt.blockedUntil) return;
+
+    if (now < attempt.blockedUntil) {
+      throw new UnauthorizedException('Đăng nhập sai quá nhiều lần. Vui lòng thử lại sau.');
+    }
+
+    this.failedLoginAttempts.delete(throttleKey);
+  }
+
+  private recordFailedAttempt(throttleKey: string): void {
+    const now = Date.now();
+    const maxAttempts = this.getMaxFailedAttempts();
+    const blockDurationMs = this.getBlockDurationMs();
+    const existing = this.failedLoginAttempts.get(throttleKey);
+
+    if (!existing) {
+      this.failedLoginAttempts.set(throttleKey, {
+        count: 1,
+        firstFailedAt: now,
+      });
+      return;
+    }
+
+    const updatedCount = existing.count + 1;
+    const nextAttempt: FailedLoginAttempt = {
+      ...existing,
+      count: updatedCount,
+    };
+
+    if (updatedCount >= maxAttempts) {
+      nextAttempt.blockedUntil = now + blockDurationMs;
+    }
+
+    this.failedLoginAttempts.set(throttleKey, nextAttempt);
+  }
+
+  private clearFailedAttempt(throttleKey: string): void {
+    this.failedLoginAttempts.delete(throttleKey);
   }
 
   private findMatchedInternalAccount(normalizedEmail: string, password: string): {

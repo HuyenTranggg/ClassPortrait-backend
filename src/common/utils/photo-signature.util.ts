@@ -1,7 +1,15 @@
 import { createHmac } from 'crypto';
 
 function getSecret(): string {
-  return process.env.JWT_SECRET ?? 'photo-secret-fallback';
+  const photoSecret = process.env.PHOTO_SIGN_SECRET?.trim();
+  const jwtSecret = process.env.JWT_SECRET?.trim();
+  const secret = photoSecret || jwtSecret;
+
+  if (!secret) {
+    throw new Error('PHOTO_SIGN_SECRET hoặc JWT_SECRET phải được cấu hình');
+  }
+
+  return secret;
 }
 
 export function createPhotoSignaturePayload(mssv: string, classId: string, expiresAt: number): string {

@@ -12,30 +12,49 @@ export class JwtAuthGuard {
     private readonly reflector: Reflector,
   ) {}
 
+  private extractBearerToken(authHeader?: string): string | null {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return null;
+    }
+    return authHeader.slice(7);
+  }
+
+  private verifyTokenOrThrow(token: string): any {
+    const secret = this.configService.get<string>('JWT_SECRET')?.trim();
+    if (!secret) {
+      throw new UnauthorizedException('JWT secret chưa được cấu hình trên server.');
+    }
+
+    try {
+      return this.jwtService.verify(token, { secret });
+    } catch {
+      throw new UnauthorizedException('Token không hợp lệ hoặc đã hết hạn.');
+    }
+  }
+
   canActivate(context: ExecutionContext): boolean {
-    // Bỏ qua guard cho các route được đánh dấu @Public()
+    const request = context.switchToHttp().getRequest();
+    const authHeader: string | undefined = request.headers['authorization'];
+    const token = this.extractBearerToken(authHeader);
+
+    // Bỏ qua bắt buộc auth cho route @Public(),
+    // nhưng nếu có token thì vẫn verify và gắn user vào request.
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
-    if (isPublic) return true;
+    if (isPublic) {
+      if (token) {
+        request.user = this.verifyTokenOrThrow(token);
+      }
+      return true;
+    }
 
-    const request = context.switchToHttp().getRequest();
-    const authHeader: string | undefined = request.headers['authorization'];
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!token) {
       throw new UnauthorizedException('Thiếu token xác thực. Vui lòng đăng nhập.');
     }
 
-    const token = authHeader.slice(7);
-    try {
-      const payload = this.jwtService.verify(token, {
-        secret: this.configService.get<string>('JWT_SECRET'),
-      });
-      request.user = payload;
-      return true;
-    } catch {
-      throw new UnauthorizedException('Token không hợp lệ hoặc đã hết hạn.');
-    }
+    request.user = this.verifyTokenOrThrow(token);
+    return true;
   }
 }
