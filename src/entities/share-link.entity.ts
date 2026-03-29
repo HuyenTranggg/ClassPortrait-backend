@@ -10,7 +10,7 @@ export class ShareLinkEntity {
   @JoinColumn({ name: 'class_id' })
   classEntity!: ClassEntity;
 
-  @Column({ name: 'class_id', type: 'uuid' })
+  @Column({ name: 'class_id', type: 'uuid', unique: true })
   classId!: string;
 
   @Column({ type: 'varchar', length: 255, unique: true })

@@ -5,6 +5,7 @@ import {
   Body,
   Get,
   Post,
+  Patch,
   Delete,
   Param,
   Query,
@@ -33,6 +34,9 @@ import type { Class, Student, ClassWithStudents } from '../common/types';
 import { ImportClassDto } from './dto/import-class.dto';
 import { ImportGoogleSheetDto } from './dto/import-google-sheet.dto';
 import { SourceType } from '../entities/import-history.entity';
+import { CreateShareLinkDto } from './dto/create-share-link.dto';
+import { UpdateShareLinkDto } from './dto/update-share-link.dto';
+import { Public } from '../auth/decorators/public.decorator';
 
 @ApiTags('classes')
 @ApiBearerAuth('bearer')
@@ -187,5 +191,63 @@ export class ClassesController {
   remove(@Param('id', new ParseUUIDPipe()) id: string, @Req() req: any) {
     const userId = this.extractUserId(req);
     return this.classesService.remove(id, userId);
+  }
+
+  @Post(':id/share-link')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Tạo link chia sẻ sổ ảnh cho lớp' })
+  @ApiParam({ name: 'id', description: 'ID của lớp' })
+  @ApiResponse({ status: 201, description: 'Tạo link chia sẻ thành công' })
+  @ApiResponse({ status: 409, description: 'Lớp đã có link chia sẻ, cần dùng API cập nhật' })
+  async createShareLink(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body: CreateShareLinkDto,
+    @Req() req: any,
+  ) {
+    const userId = this.extractUserId(req);
+    return this.classesService.createShareLink(id, userId, body.expiresInDays);
+  }
+
+  @Get(':id/share-link')
+  @ApiOperation({ summary: 'Lấy link chia sẻ hiện tại của lớp' })
+  @ApiParam({ name: 'id', description: 'ID của lớp' })
+  @ApiResponse({ status: 200, description: 'Trả về link chia sẻ hiện tại (hoặc null nếu chưa có)' })
+  async getShareLink(@Param('id', new ParseUUIDPipe()) id: string, @Req() req: any) {
+    const userId = this.extractUserId(req);
+    return this.classesService.getShareLink(id, userId);
+  }
+
+  @Patch(':id/share-link')
+  @ApiOperation({ summary: 'Cập nhật trạng thái/hạn dùng link chia sẻ' })
+  @ApiParam({ name: 'id', description: 'ID của lớp' })
+  @ApiResponse({ status: 200, description: 'Cập nhật link chia sẻ thành công' })
+  async updateShareLink(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body: UpdateShareLinkDto,
+    @Req() req: any,
+  ) {
+    const userId = this.extractUserId(req);
+    return this.classesService.updateShareLink(id, userId, {
+      isActive: body.isActive,
+      expiresAt: body.expiresAt,
+    });
+  }
+
+  @Delete(':id/share-link')
+  @ApiOperation({ summary: 'Xóa hẳn link chia sẻ' })
+  @ApiParam({ name: 'id', description: 'ID của lớp' })
+  @ApiResponse({ status: 200, description: 'Xóa link thành công' })
+  async revokeShareLink(@Param('id', new ParseUUIDPipe()) id: string, @Req() req: any) {
+    const userId = this.extractUserId(req);
+    return this.classesService.revokeShareLink(id, userId);
+  }
+
+  @Public()
+  @Get('shared/:token')
+  @ApiOperation({ summary: 'Xem sổ ảnh qua link chia sẻ công khai' })
+  @ApiParam({ name: 'token', description: 'Token link chia sẻ' })
+  @ApiResponse({ status: 200, description: 'Trả về dữ liệu lớp và danh sách sinh viên' })
+  async getSharedClass(@Param('token') token: string) {
+    return this.classesService.getSharedClassByToken(token);
   }
 }

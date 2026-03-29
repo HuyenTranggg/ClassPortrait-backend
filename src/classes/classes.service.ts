@@ -11,6 +11,7 @@ import {
 import { ImportHistoryService } from './import/import-history.service';
 import { ClassQueryService } from './class-query.service';
 import { ClassImportService } from './class-import.service';
+import { ClassShareService, SharedClassView, ShareLinkView } from './class-share.service';
 
 @Injectable()
 export class ClassesService {
@@ -18,6 +19,7 @@ export class ClassesService {
     private readonly classQueryService: ClassQueryService,
     private readonly classImportService: ClassImportService,
     private readonly importHistoryService: ImportHistoryService,
+    private readonly classShareService: ClassShareService,
   ) {}
 
   async getImportHistoryByUser(
@@ -69,5 +71,29 @@ export class ClassesService {
     options?: ImportClassOptions,
   ): Promise<ImportClassResult> {
     return this.classImportService.importFromGoogleSheet(googleSheetUrl, userId, options);
+  }
+
+  async createShareLink(classId: string, userId: string, expiresInDays?: number): Promise<ShareLinkView> {
+    return this.classShareService.createShareLink(classId, userId, expiresInDays);
+  }
+
+  async getShareLink(classId: string, userId: string): Promise<ShareLinkView | null> {
+    return this.classShareService.getShareLink(classId, userId);
+  }
+
+  async updateShareLink(
+    classId: string,
+    userId: string,
+    payload: { isActive?: boolean; expiresAt?: string },
+  ): Promise<ShareLinkView> {
+    return this.classShareService.updateShareLink(classId, userId, payload);
+  }
+
+  async revokeShareLink(classId: string, userId: string): Promise<{ success: boolean; message: string }> {
+    return this.classShareService.revokeShareLink(classId, userId);
+  }
+
+  async getSharedClassByToken(token: string): Promise<SharedClassView> {
+    return this.classShareService.getSharedClassByToken(token);
   }
 }
