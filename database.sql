@@ -101,7 +101,7 @@ CREATE INDEX idx_import_history_class_created_at
 
 CREATE TABLE share_links (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    class_id UUID NOT NULL,
+    class_id UUID NOT NULL UNIQUE,
     token VARCHAR(255) UNIQUE NOT NULL,
     is_active BOOLEAN DEFAULT TRUE,
     expires_at TIMESTAMP,

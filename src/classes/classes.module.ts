@@ -7,6 +7,7 @@ import { ClassesController } from './classes.controller';
 import { ClassesService } from './classes.service';
 import { ClassQueryService } from './class-query.service';
 import { ClassImportService } from './class-import.service';
+import { ClassShareService } from './class-share.service';
 import { ImportParserService } from './import/import-parser.service';
 import { FileImportParserService } from './import/file-import-parser.service';
 import { GoogleSheetParserService } from './import/google-sheet-parser.service';
@@ -32,6 +33,7 @@ import { ShareLinkEntity } from '../entities/share-link.entity';
     ClassesService,
     ClassQueryService,
     ClassImportService,
+    ClassShareService,
     ImportParserService,
     FileImportParserService,
     GoogleSheetParserService,
