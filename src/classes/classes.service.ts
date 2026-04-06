@@ -73,14 +73,34 @@ export class ClassesService {
     return this.classImportService.importFromGoogleSheet(googleSheetUrl, userId, options);
   }
 
+  /**
+   * Tạo link chia sẻ cho lớp học.
+   * @param classId ID lớp học cần chia sẻ.
+   * @param userId ID người dùng thực hiện thao tác.
+   * @param expiresInDays Số ngày hiệu lực của link (nếu có).
+   * @returns Thông tin link chia sẻ đã được tạo.
+   */
   async createShareLink(classId: string, userId: string, expiresInDays?: number): Promise<ShareLinkView> {
     return this.classShareService.createShareLink(classId, userId, expiresInDays);
   }
 
+  /**
+   * Lấy link chia sẻ hiện tại của lớp.
+   * @param classId ID lớp học.
+   * @param userId ID người dùng sở hữu lớp.
+   * @returns Link chia sẻ hiện tại hoặc null nếu chưa có.
+   */
   async getShareLink(classId: string, userId: string): Promise<ShareLinkView | null> {
     return this.classShareService.getShareLink(classId, userId);
   }
 
+  /**
+   * Cập nhật trạng thái hoặc hạn dùng của link chia sẻ.
+   * @param classId ID lớp học.
+   * @param userId ID người dùng sở hữu lớp.
+   * @param payload Dữ liệu cập nhật link chia sẻ.
+   * @returns Link chia sẻ sau khi cập nhật.
+   */
   async updateShareLink(
     classId: string,
     userId: string,
@@ -89,10 +109,21 @@ export class ClassesService {
     return this.classShareService.updateShareLink(classId, userId, payload);
   }
 
+  /**
+   * Xóa link chia sẻ hiện tại của lớp.
+   * @param classId ID lớp học.
+   * @param userId ID người dùng sở hữu lớp.
+   * @returns Kết quả thao tác xóa link chia sẻ.
+   */
   async revokeShareLink(classId: string, userId: string): Promise<{ success: boolean; message: string }> {
     return this.classShareService.revokeShareLink(classId, userId);
   }
 
+  /**
+   * Lấy dữ liệu sổ ảnh công khai thông qua token chia sẻ.
+   * @param token Token chia sẻ.
+   * @returns Thông tin lớp và danh sách sinh viên phục vụ trang chia sẻ.
+   */
   async getSharedClassByToken(token: string): Promise<SharedClassView> {
     return this.classShareService.getSharedClassByToken(token);
   }

@@ -12,6 +12,11 @@ export class JwtAuthGuard {
     private readonly reflector: Reflector,
   ) {}
 
+  /**
+   * Trích xuất bearer token từ Authorization header.
+   * @param authHeader Giá trị header Authorization.
+   * @returns Token nếu hợp lệ, ngược lại trả về null.
+   */
   private extractBearerToken(authHeader?: string): string | null {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return null;
@@ -19,6 +24,11 @@ export class JwtAuthGuard {
     return authHeader.slice(7);
   }
 
+  /**
+   * Xác thực JWT và trả payload.
+   * @param token JWT cần xác thực.
+   * @returns Payload đã giải mã từ token hợp lệ.
+   */
   private verifyTokenOrThrow(token: string): any {
     const secret = this.configService.get<string>('JWT_SECRET')?.trim();
     if (!secret) {
@@ -32,6 +42,11 @@ export class JwtAuthGuard {
     }
   }
 
+  /**
+   * Kiểm tra quyền truy cập cho request hiện tại.
+   * @param context ExecutionContext của request.
+   * @returns true nếu request được phép đi tiếp.
+   */
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest();
     const authHeader: string | undefined = request.headers['authorization'];

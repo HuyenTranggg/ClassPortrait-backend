@@ -47,6 +47,10 @@ export class ClassShareService {
     private readonly shareLinksRepository: Repository<ShareLinkEntity>,
   ) {}
 
+  /**
+   * Lấy base URL backend để dựng các URL công khai trả về cho client.
+   * @returns Base URL không có dấu '/' ở cuối.
+   */
   private getBaseUrl(): string {
     const port = process.env.PORT ?? '3000';
     const configuredBaseUrl = process.env.BACKEND_BASE_URL?.trim();
@@ -54,16 +58,33 @@ export class ClassShareService {
     return baseUrl.replace(/\/$/, '');
   }
 
+  /**
+   * Dựng URL public dùng để mở sổ ảnh qua token.
+   * @param token Token chia sẻ công khai.
+   * @returns URL đầy đủ của endpoint chia sẻ.
+   */
   private buildShareUrl(token: string): string {
     return `${this.getBaseUrl()}/classes/shared/${token}`;
   }
 
+  /**
+   * Tạo URL ảnh sinh viên có chữ ký để truy cập công khai trong thời gian ngắn.
+   * @param mssv Mã số sinh viên.
+   * @param classId ID lớp học chứa sinh viên.
+   * @returns URL ảnh sinh viên đã ký gồm classId, exp và sig.
+   */
   private buildStudentPhotoUrl(mssv: string, classId: string): string {
     const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 7;
     const signature = signPhotoUrl(mssv, classId, expiresAt);
     return `${this.getBaseUrl()}/students/${encodeURIComponent(mssv)}/photo?classId=${encodeURIComponent(classId)}&exp=${expiresAt}&sig=${signature}`;
   }
 
+  /**
+   * Kiểm tra lớp có thuộc quyền quản lý của user hiện tại hay không.
+   * @param classId ID lớp học cần kiểm tra.
+   * @param userId ID người dùng hiện tại.
+   * @returns Thực thể lớp nếu người dùng có quyền truy cập.
+   */
   private async assertClassOwnership(classId: string, userId: string): Promise<ClassEntity> {
     const classEntity = await this.classesRepository.findOne({ where: { id: classId, userId } });
     if (!classEntity) {
@@ -72,6 +93,10 @@ export class ClassShareService {
     return classEntity;
   }
 
+  /**
+   * Sinh token chia sẻ ngẫu nhiên và đảm bảo chưa tồn tại trong DB.
+   * @returns Token chia sẻ duy nhất.
+   */
   private async generateUniqueToken(): Promise<string> {
     for (let i = 0; i < 5; i += 1) {
       const token = randomBytes(32).toString('hex');
@@ -84,6 +109,11 @@ export class ClassShareService {
     throw new ForbiddenException('Khong the tao token chia se. Vui long thu lai.');
   }
 
+  /**
+   * Chuyển thực thể ShareLink thành dạng view trả về API.
+   * @param entity Thực thể share link từ database.
+   * @returns Dữ liệu share link đã bao gồm shareUrl.
+   */
   private toView(entity: ShareLinkEntity): ShareLinkView {
     return {
       id: entity.id,
@@ -95,6 +125,13 @@ export class ClassShareService {
     };
   }
 
+  /**
+   * Tạo mới link chia sẻ cho một lớp.
+   * @param classId ID lớp cần chia sẻ.
+   * @param userId ID người dùng tạo link.
+   * @param expiresInDays Số ngày hiệu lực của link (nếu truyền vào).
+   * @returns Thông tin link chia sẻ vừa được tạo.
+   */
   async createShareLink(classId: string, userId: string, expiresInDays?: number): Promise<ShareLinkView> {
     await this.assertClassOwnership(classId, userId);
 
@@ -117,6 +154,12 @@ export class ClassShareService {
     return this.toView(saved);
   }
 
+  /**
+   * Lấy link chia sẻ hiện tại của lớp.
+   * @param classId ID lớp cần lấy link.
+   * @param userId ID người dùng sở hữu lớp.
+   * @returns Link chia sẻ hiện có hoặc null nếu chưa tồn tại.
+   */
   async getShareLink(classId: string, userId: string): Promise<ShareLinkView | null> {
     await this.assertClassOwnership(classId, userId);
 
@@ -125,6 +168,13 @@ export class ClassShareService {
     return this.toView(entity);
   }
 
+  /**
+   * Cập nhật trạng thái hoặc hạn dùng của link chia sẻ.
+   * @param classId ID lớp có link cần cập nhật.
+   * @param userId ID người dùng sở hữu lớp.
+   * @param payload Dữ liệu cập nhật gồm isActive và/hoặc expiresAt.
+   * @returns Thông tin link chia sẻ sau cập nhật.
+   */
   async updateShareLink(
     classId: string,
     userId: string,
@@ -148,6 +198,12 @@ export class ClassShareService {
     return this.toView(saved);
   }
 
+  /**
+   * Thu hồi (xóa) link chia sẻ của lớp.
+   * @param classId ID lớp có link cần thu hồi.
+   * @param userId ID người dùng sở hữu lớp.
+   * @returns Kết quả thao tác thu hồi link.
+   */
   async revokeShareLink(classId: string, userId: string): Promise<{ success: boolean; message: string }> {
     await this.assertClassOwnership(classId, userId);
 
@@ -164,6 +220,11 @@ export class ClassShareService {
     };
   }
 
+  /**
+   * Lấy dữ liệu sổ ảnh khi người dùng truy cập bằng token chia sẻ công khai.
+   * @param token Token chia sẻ trên URL public.
+   * @returns Thông tin lớp và danh sách sinh viên kèm URL ảnh đã ký.
+   */
   async getSharedClassByToken(token: string): Promise<SharedClassView> {
     const shareLink = await this.shareLinksRepository.findOne({
       where: { token },

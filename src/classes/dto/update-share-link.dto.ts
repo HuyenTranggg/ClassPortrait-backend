@@ -2,6 +2,9 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsDateString, IsOptional } from 'class-validator';
 
+/**
+ * DTO dùng cho API cập nhật trạng thái/hạn dùng link chia sẻ.
+ */
 export class UpdateShareLinkDto {
   @ApiProperty({
     required: false,

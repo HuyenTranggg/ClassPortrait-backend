@@ -1,6 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsInt, IsOptional, Min } from 'class-validator';
 
+/**
+ * DTO dùng cho API tạo link chia sẻ lớp.
+ */
 export class CreateShareLinkDto {
   @ApiProperty({
     required: false,

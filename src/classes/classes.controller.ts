@@ -44,6 +44,11 @@ import { Public } from '../auth/decorators/public.decorator';
 export class ClassesController {
   constructor(private readonly classesService: ClassesService) {}
 
+  /**
+   * Trích xuất userId từ JWT payload đã được guard gắn vào request.
+   * @param req Request hiện tại chứa req.user.
+   * @returns userId dạng UUID hợp lệ.
+   */
   private extractUserId(req: any): string {
     const candidate = req.user?.userId ?? req.user?.sub;
     const userId = typeof candidate === 'string' ? candidate.trim() : '';
@@ -199,6 +204,13 @@ export class ClassesController {
   @ApiParam({ name: 'id', description: 'ID của lớp' })
   @ApiResponse({ status: 201, description: 'Tạo link chia sẻ thành công' })
   @ApiResponse({ status: 409, description: 'Lớp đã có link chia sẻ, cần dùng API cập nhật' })
+  /**
+   * Tạo link chia sẻ cho một lớp thuộc quyền sở hữu của người dùng hiện tại.
+   * @param id ID lớp học.
+   * @param body Dữ liệu tạo link (ví dụ số ngày hết hạn).
+   * @param req Request chứa thông tin người dùng đã xác thực.
+   * @returns Thông tin link chia sẻ vừa tạo.
+   */
   async createShareLink(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() body: CreateShareLinkDto,
@@ -212,6 +224,12 @@ export class ClassesController {
   @ApiOperation({ summary: 'Lấy link chia sẻ hiện tại của lớp' })
   @ApiParam({ name: 'id', description: 'ID của lớp' })
   @ApiResponse({ status: 200, description: 'Trả về link chia sẻ hiện tại (hoặc null nếu chưa có)' })
+  /**
+   * Lấy link chia sẻ hiện có của lớp.
+   * @param id ID lớp học.
+   * @param req Request chứa thông tin người dùng đã xác thực.
+   * @returns Dữ liệu link chia sẻ hoặc null nếu lớp chưa được chia sẻ.
+   */
   async getShareLink(@Param('id', new ParseUUIDPipe()) id: string, @Req() req: any) {
     const userId = this.extractUserId(req);
     return this.classesService.getShareLink(id, userId);
@@ -221,6 +239,13 @@ export class ClassesController {
   @ApiOperation({ summary: 'Cập nhật trạng thái/hạn dùng link chia sẻ' })
   @ApiParam({ name: 'id', description: 'ID của lớp' })
   @ApiResponse({ status: 200, description: 'Cập nhật link chia sẻ thành công' })
+  /**
+   * Cập nhật trạng thái hoạt động hoặc hạn dùng của link chia sẻ.
+   * @param id ID lớp học.
+   * @param body Dữ liệu cập nhật link (isActive, expiresAt).
+   * @param req Request chứa thông tin người dùng đã xác thực.
+   * @returns Thông tin link sau khi cập nhật.
+   */
   async updateShareLink(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() body: UpdateShareLinkDto,
@@ -237,6 +262,12 @@ export class ClassesController {
   @ApiOperation({ summary: 'Xóa hẳn link chia sẻ' })
   @ApiParam({ name: 'id', description: 'ID của lớp' })
   @ApiResponse({ status: 200, description: 'Xóa link thành công' })
+  /**
+   * Thu hồi hoàn toàn link chia sẻ của lớp.
+   * @param id ID lớp học.
+   * @param req Request chứa thông tin người dùng đã xác thực.
+   * @returns Kết quả thao tác thu hồi link.
+   */
   async revokeShareLink(@Param('id', new ParseUUIDPipe()) id: string, @Req() req: any) {
     const userId = this.extractUserId(req);
     return this.classesService.revokeShareLink(id, userId);
@@ -247,6 +278,11 @@ export class ClassesController {
   @ApiOperation({ summary: 'Xem sổ ảnh qua link chia sẻ công khai' })
   @ApiParam({ name: 'token', description: 'Token link chia sẻ' })
   @ApiResponse({ status: 200, description: 'Trả về dữ liệu lớp và danh sách sinh viên' })
+  /**
+   * Trả về dữ liệu sổ ảnh cho người dùng truy cập bằng token chia sẻ.
+   * @param token Token chia sẻ công khai.
+   * @returns Thông tin lớp và danh sách sinh viên kèm URL ảnh đã ký.
+   */
   async getSharedClass(@Param('token') token: string) {
     return this.classesService.getSharedClassByToken(token);
   }
