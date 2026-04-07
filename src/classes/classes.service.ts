@@ -120,11 +120,13 @@ export class ClassesService {
   }
 
   /**
-   * Lấy dữ liệu sổ ảnh công khai thông qua token chia sẻ.
-   * @param token Token chia sẻ.
+   * Lấy dữ liệu sổ ảnh công khai thông qua link có chữ ký.
+   * @param shareId ID của share link.
+   * @param exp Unix timestamp milliseconds của thời điểm hết hạn.
+   * @param sig Chữ ký HMAC đảm bảo tính toàn vẹn của link.
    * @returns Thông tin lớp và danh sách sinh viên phục vụ trang chia sẻ.
    */
-  async getSharedClassByToken(token: string): Promise<SharedClassView> {
-    return this.classShareService.getSharedClassByToken(token);
+  async getSharedClassBySignedLink(shareId: string, exp: number, sig: string): Promise<SharedClassView> {
+    return this.classShareService.getSharedClassBySignedLink(shareId, exp, sig);
   }
 }

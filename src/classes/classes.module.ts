@@ -1,6 +1,6 @@
 // backend/src/classes/classes.module.ts
 
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ClassesController } from './classes.controller';
@@ -18,6 +18,7 @@ import { ClassEntity } from '../entities/class.entity';
 import { StudentEntity } from '../entities/student.entity';
 import { ImportHistoryEntity } from '../entities/import-history.entity';
 import { ShareLinkEntity } from '../entities/share-link.entity';
+import { ShareLinkSignatureMiddleware } from './middlewares/share-link-signature.middleware';
 
 @Module({
   imports: [
@@ -43,4 +44,15 @@ import { ShareLinkEntity } from '../entities/share-link.entity';
   ],
   exports: [ClassesService], // Export để có thể dùng trong module khác
 })
-export class ClassesModule {}
+export class ClassesModule implements NestModule {
+  /**
+   * Cấu hình middleware xác thực chữ ký cho endpoint chia sẻ công khai.
+   * @param consumer Middleware consumer của NestJS.
+   * @returns Không trả dữ liệu; đăng ký middleware theo route.
+   */
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(ShareLinkSignatureMiddleware)
+      .forRoutes({ path: 'classes/shared/:id', method: RequestMethod.GET });
+  }
+}

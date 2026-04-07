@@ -274,16 +274,20 @@ export class ClassesController {
   }
 
   @Public()
-  @Get('shared/:token')
+  @Get('shared/:id')
   @ApiOperation({ summary: 'Xem sổ ảnh qua link chia sẻ công khai' })
-  @ApiParam({ name: 'token', description: 'Token link chia sẻ' })
+  @ApiParam({ name: 'id', description: 'ID của share link' })
+  @ApiQuery({ name: 'exp', required: true, description: 'Unix timestamp milliseconds của thời điểm hết hạn' })
+  @ApiQuery({ name: 'sig', required: true, description: 'Chữ ký HMAC-SHA256 của id + exp' })
   @ApiResponse({ status: 200, description: 'Trả về dữ liệu lớp và danh sách sinh viên' })
   /**
-   * Trả về dữ liệu sổ ảnh cho người dùng truy cập bằng token chia sẻ.
-   * @param token Token chia sẻ công khai.
+    * Trả về dữ liệu sổ ảnh cho người dùng truy cập bằng link đã ký.
+   * @param id ID của share link.
+   * @param exp Unix timestamp milliseconds biểu diễn thời điểm hết hạn.
+   * @param sig Chữ ký HMAC đảm bảo id và exp không bị chỉnh sửa.
    * @returns Thông tin lớp và danh sách sinh viên kèm URL ảnh đã ký.
    */
-  async getSharedClass(@Param('token') token: string) {
-    return this.classesService.getSharedClassByToken(token);
+  async getSharedClass(@Param('id') id: string, @Query('exp') exp: string, @Query('sig') sig: string) {
+    return this.classesService.getSharedClassBySignedLink(id, Number(exp), sig);
   }
 }

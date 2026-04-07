@@ -3,6 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
 import { signPhotoUrl } from '../common/utils/photo-signature.util';
+import {
+  resolveShareLinkExpiresAt,
+  signShareLink,
+  verifyShareLinkSignature,
+} from '../common/utils/share-link-signature.util';
 import { ClassEntity } from '../entities/class.entity';
 import { ShareLinkEntity } from '../entities/share-link.entity';
 import { StudentEntity } from '../entities/student.entity';
@@ -59,12 +64,16 @@ export class ClassShareService {
   }
 
   /**
-   * Dựng URL public dùng để mở sổ ảnh qua token.
-   * @param token Token chia sẻ công khai.
+   * Dựng URL public dạng mới có công khai exp và chữ ký HMAC.
+   * @param shareId ID bản ghi share link.
+   * @param expiresAt Unix timestamp milliseconds của thời điểm hết hạn.
+   * @param signature Chữ ký HMAC của shareId và expiresAt.
    * @returns URL đầy đủ của endpoint chia sẻ.
    */
-  private buildShareUrl(token: string): string {
-    return `${this.getBaseUrl()}/classes/shared/${token}`;
+  private buildShareUrl(shareId: string, expiresAt: number, signature: string): string {
+    const encodedId = encodeURIComponent(shareId);
+    const encodedSig = encodeURIComponent(signature);
+    return `${this.getBaseUrl()}/classes/shared/${encodedId}?exp=${expiresAt}&sig=${encodedSig}`;
   }
 
   /**
@@ -115,10 +124,13 @@ export class ClassShareService {
    * @returns Dữ liệu share link đã bao gồm shareUrl.
    */
   private toView(entity: ShareLinkEntity): ShareLinkView {
+    const exp = resolveShareLinkExpiresAt(entity.expiresAt);
+    const sig = signShareLink(entity.id, exp);
+
     return {
       id: entity.id,
       token: entity.token,
-      shareUrl: this.buildShareUrl(entity.token),
+      shareUrl: this.buildShareUrl(entity.id, exp, sig),
       isActive: entity.isActive,
       expiresAt: entity.expiresAt,
       createdAt: entity.createdAt,
@@ -221,13 +233,28 @@ export class ClassShareService {
   }
 
   /**
-   * Lấy dữ liệu sổ ảnh khi người dùng truy cập bằng token chia sẻ công khai.
-   * @param token Token chia sẻ trên URL public.
+   * Lấy dữ liệu sổ ảnh khi người dùng truy cập bằng link đã ký.
+   * @param shareId ID bản ghi share link.
+   * @param exp Unix timestamp milliseconds của thời điểm hết hạn.
+   * @param sig Chữ ký HMAC đảm bảo tính toàn vẹn của link.
    * @returns Thông tin lớp và danh sách sinh viên kèm URL ảnh đã ký.
    */
-  async getSharedClassByToken(token: string): Promise<SharedClassView> {
+  async getSharedClassBySignedLink(shareId: string, exp: number, sig: string): Promise<SharedClassView> {
+    if (!Number.isInteger(exp) || exp <= 0) {
+      throw new ForbiddenException('Thoi diem het han trong link khong hop le');
+    }
+
+    if (!sig) {
+      throw new ForbiddenException('Thieu chu ky trong link chia se');
+    }
+
+    // Kiểm tra chữ ký thêm một lần ở service để tránh phụ thuộc hoàn toàn vào middleware.
+    if (!verifyShareLinkSignature(shareId, exp, sig)) {
+      throw new ForbiddenException('Chu ky link chia se khong hop le hoac da het han');
+    }
+
     const shareLink = await this.shareLinksRepository.findOne({
-      where: { token },
+      where: { id: shareId },
       relations: ['classEntity'],
     });
 
@@ -237,6 +264,11 @@ export class ClassShareService {
 
     if (!shareLink.isActive) {
       throw new ForbiddenException('Link chia se da bi vo hieu hoa');
+    }
+
+    const expectedExp = resolveShareLinkExpiresAt(shareLink.expiresAt);
+    if (exp !== expectedExp) {
+      throw new ForbiddenException('Link chia se khong con hop le voi thoi diem het han hien tai');
     }
 
     if (shareLink.expiresAt && Date.now() > shareLink.expiresAt.getTime()) {
