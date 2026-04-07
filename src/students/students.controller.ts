@@ -14,6 +14,16 @@ export class StudentsController {
   @ApiOperation({ summary: 'Lấy ảnh của sinh viên' })
   @ApiResponse({ status: 200, description: 'Trả về ảnh sinh viên' })
   @ApiResponse({ status: 404, description: 'Không tìm thấy ảnh' })
+  /**
+   * Trả ảnh sinh viên theo mssv trong bối cảnh lớp học.
+   * @param mssv Mã số sinh viên.
+   * @param classId ID lớp học dùng để kiểm tra quyền truy cập.
+   * @param exp Mốc thời gian hết hạn của URL đã ký.
+   * @param sig Chữ ký URL đã được backend tạo trước đó.
+   * @param req Request hiện tại (có thể có hoặc không có JWT).
+   * @param res Response để stream dữ liệu ảnh trực tiếp.
+   * @returns Không trả JSON; stream ảnh trực tiếp ra response.
+   */
   async getPhoto(
     @Param('mssv') mssv: string,
     @Query('classId') classId: string,

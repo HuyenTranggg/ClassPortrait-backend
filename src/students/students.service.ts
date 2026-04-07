@@ -22,7 +22,13 @@ export class StudentsService {
   ) {}
 
   /**
-   * Lấy ảnh sinh viên từ API Toolhub
+   * Lấy ảnh sinh viên theo lớp, có kiểm tra quyền bằng JWT hoặc chữ ký URL.
+   * @param mssv Mã số sinh viên cần lấy ảnh.
+   * @param classId ID lớp học chứa sinh viên.
+   * @param userId ID người dùng nếu truy cập bằng JWT (tùy chọn).
+   * @param exp Thời điểm hết hạn của URL đã ký (timestamp ms, tùy chọn).
+   * @param sig Chữ ký URL ảnh (tùy chọn).
+   * @returns Stream dữ liệu ảnh và content-type tương ứng.
    */
   async getStudentPhoto(
     mssv: string,
@@ -35,12 +41,14 @@ export class StudentsService {
       throw new NotFoundException('Thiếu classId khi lấy ảnh sinh viên');
     }
 
+    // Nhánh private: user đăng nhập thì kiểm tra quyền sở hữu lớp.
     if (userId) {
       const classOwned = await this.classesRepository.exists({ where: { id: classId, userId } });
       if (!classOwned) {
         throw new ForbiddenException('Bạn không có quyền xem ảnh sinh viên của lớp này');
       }
     } else {
+      // Nhánh public: bắt buộc URL ảnh phải có chữ ký hợp lệ và chưa hết hạn.
       const isValidSignature = verifyPhotoSignature(mssv, classId, exp ?? NaN, sig ?? '');
       if (!isValidSignature) {
         throw new ForbiddenException('URL ảnh không hợp lệ hoặc đã hết hạn');
