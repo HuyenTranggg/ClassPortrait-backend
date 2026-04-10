@@ -13,6 +13,7 @@ import { ClassEntity } from './entities/class.entity';
 import { StudentEntity } from './entities/student.entity';
 import { ImportHistoryEntity } from './entities/import-history.entity';
 import { ShareLinkEntity } from './entities/share-link.entity';
+import { AttendanceEntity } from './entities/attendance.entity';
 
 @Module({
   imports: [
@@ -28,7 +29,7 @@ import { ShareLinkEntity } from './entities/share-link.entity';
         username: configService.get<string>('DB_USER', 'postgres'),
         password: configService.get<string>('DB_PASSWORD', ''),
         database: configService.get<string>('DB_NAME', 'classportrait'),
-        entities: [UserEntity, ClassEntity, StudentEntity, ImportHistoryEntity, ShareLinkEntity],
+        entities: [UserEntity, ClassEntity, StudentEntity, ImportHistoryEntity, ShareLinkEntity, AttendanceEntity],
         synchronize: false,
       }),
     }),
