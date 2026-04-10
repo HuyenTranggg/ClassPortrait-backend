@@ -11,6 +11,7 @@ import { UserEntity } from './user.entity';
 import { StudentEntity } from './student.entity';
 import { ImportHistoryEntity } from './import-history.entity';
 import { ShareLinkEntity } from './share-link.entity';
+import { AttendanceEntity } from './attendance.entity';
 
 @Entity('classes')
 export class ClassEntity {
@@ -56,5 +57,8 @@ export class ClassEntity {
 
   @OneToMany(() => ShareLinkEntity, (share) => share.classEntity)
   shareLinks!: ShareLinkEntity[];
+
+  @OneToMany(() => AttendanceEntity, (attendance) => attendance.classEntity)
+  attendances!: AttendanceEntity[];
 }
 

@@ -12,6 +12,8 @@ import { ImportHistoryService } from './import/import-history.service';
 import { ClassQueryService } from './class-query.service';
 import { ClassImportService } from './class-import.service';
 import { ClassShareService, SharedClassView, ShareLinkView } from './class-share.service';
+import { AttendanceStatus } from '../entities/attendance.entity';
+import { ClassAttendanceService, ClassAttendanceView, AttendanceMutationView } from './class-attendance.service';
 
 @Injectable()
 export class ClassesService {
@@ -20,6 +22,7 @@ export class ClassesService {
     private readonly classImportService: ClassImportService,
     private readonly importHistoryService: ImportHistoryService,
     private readonly classShareService: ClassShareService,
+    private readonly classAttendanceService: ClassAttendanceService,
   ) {}
 
   async getImportHistoryByUser(
@@ -128,5 +131,55 @@ export class ClassesService {
    */
   async getSharedClassBySignedLink(shareId: string, exp: number, sig: string): Promise<SharedClassView> {
     return this.classShareService.getSharedClassBySignedLink(shareId, exp, sig);
+  }
+
+  /**
+   * Lấy dữ liệu điểm danh của toàn bộ sinh viên trong lớp.
+   * @param classId ID lớp học.
+   * @param userId ID người dùng hiện tại.
+   * @param includeStats Cờ xác định có trả thống kê hay không.
+   * @returns Dữ liệu điểm danh của lớp.
+   */
+  async getClassAttendance(classId: string, userId: string, includeStats = true): Promise<ClassAttendanceView> {
+    return this.classAttendanceService.getClassAttendance(classId, userId, includeStats);
+  }
+
+  /**
+   * Toggle trạng thái điểm danh của một sinh viên trong lớp.
+   * @param classId ID lớp học.
+   * @param studentId ID sinh viên.
+   * @param userId ID người dùng hiện tại.
+   * @returns Trạng thái điểm danh mới sau thao tác toggle.
+   */
+  async toggleAttendance(classId: string, studentId: string, userId: string): Promise<AttendanceMutationView> {
+    return this.classAttendanceService.toggleAttendance(classId, studentId, userId);
+  }
+
+  /**
+   * Cập nhật trạng thái điểm danh tường minh cho sinh viên.
+   * @param classId ID lớp học.
+   * @param studentId ID sinh viên.
+   * @param userId ID người dùng hiện tại.
+   * @param status Trạng thái điểm danh cần đặt.
+   * @returns Trạng thái điểm danh sau khi cập nhật.
+   */
+  async setAttendance(
+    classId: string,
+    studentId: string,
+    userId: string,
+    status: AttendanceStatus,
+  ): Promise<AttendanceMutationView> {
+    return this.classAttendanceService.setAttendance(classId, studentId, userId, status);
+  }
+
+  /**
+   * Reset điểm danh toàn bộ lớp về trạng thái mục tiêu.
+   * @param classId ID lớp học.
+   * @param userId ID người dùng hiện tại.
+   * @param status Trạng thái reset mục tiêu.
+   * @returns Kết quả reset điểm danh toàn lớp.
+   */
+  async resetAttendance(classId: string, userId: string, status: AttendanceStatus = AttendanceStatus.ABSENT) {
+    return this.classAttendanceService.resetAttendance(classId, userId, status);
   }
 }

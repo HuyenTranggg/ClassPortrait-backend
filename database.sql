@@ -20,6 +20,11 @@ CREATE TYPE import_action_enum AS ENUM (
     'updated'
 );
 
+CREATE TYPE attendance_status_enum AS ENUM (
+    'present',
+    'absent'
+);
+
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -112,6 +117,21 @@ CREATE TABLE share_links (
         REFERENCES classes(id)
         ON DELETE CASCADE
 );
+
+CREATE TABLE attendance (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    class_id UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+    student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+
+    status attendance_status_enum NOT NULL DEFAULT 'absent',
+    marked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE (class_id, student_id)
+);
+
+CREATE INDEX idx_attendance_class_id
+    ON attendance (class_id);
 
 SELECT table_name
 FROM information_schema.tables

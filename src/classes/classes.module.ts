@@ -18,7 +18,9 @@ import { ClassEntity } from '../entities/class.entity';
 import { StudentEntity } from '../entities/student.entity';
 import { ImportHistoryEntity } from '../entities/import-history.entity';
 import { ShareLinkEntity } from '../entities/share-link.entity';
+import { AttendanceEntity } from '../entities/attendance.entity';
 import { ShareLinkSignatureMiddleware } from './middlewares/share-link-signature.middleware';
+import { ClassAttendanceService } from './class-attendance.service';
 
 @Module({
   imports: [
@@ -27,7 +29,7 @@ import { ShareLinkSignatureMiddleware } from './middlewares/share-link-signature
         fileSize: 10 * 1024 * 1024, // 10MB
       },
     }),
-    TypeOrmModule.forFeature([ClassEntity, StudentEntity, ImportHistoryEntity, ShareLinkEntity]),
+    TypeOrmModule.forFeature([ClassEntity, StudentEntity, ImportHistoryEntity, ShareLinkEntity, AttendanceEntity]),
   ],
   controllers: [ClassesController],
   providers: [
@@ -35,6 +37,7 @@ import { ShareLinkSignatureMiddleware } from './middlewares/share-link-signature
     ClassQueryService,
     ClassImportService,
     ClassShareService,
+    ClassAttendanceService,
     ImportParserService,
     FileImportParserService,
     GoogleSheetParserService,

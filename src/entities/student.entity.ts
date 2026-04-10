@@ -1,5 +1,6 @@
-import { Column, Entity, ManyToOne, PrimaryGeneratedColumn, JoinColumn } from 'typeorm';
+import { Column, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn, JoinColumn } from 'typeorm';
 import { ClassEntity } from './class.entity';
+import { AttendanceEntity } from './attendance.entity';
 
 export enum PhotoStatus {
   PENDING = 'pending',
@@ -36,5 +37,8 @@ export class StudentEntity {
     default: PhotoStatus.PENDING,
   })
   photoStatus!: PhotoStatus;
+
+  @OneToMany(() => AttendanceEntity, (attendance) => attendance.studentEntity)
+  attendances!: AttendanceEntity[];
 }
 
