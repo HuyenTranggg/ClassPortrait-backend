@@ -40,6 +40,12 @@ import { UpdateShareLinkDto } from './dto/update-share-link.dto';
 import { Public } from '../auth/decorators/public.decorator';
 import { SetAttendanceStatusDto } from './dto/set-attendance-status.dto';
 import { ResetAttendanceDto } from './dto/reset-attendance.dto';
+import {
+  DashboardAttendanceStatusFilter,
+  DashboardShareLinkStatusFilter,
+  DashboardSortBy,
+  DashboardSortOrder,
+} from './class-dashboard.service';
 
 @ApiTags('classes')
 @ApiBearerAuth('bearer')
@@ -99,6 +105,90 @@ export class ClassesController {
     if (['true', '1', 'yes'].includes(normalized)) return true;
     if (['false', '0', 'no'].includes(normalized)) return false;
     throw new BadRequestException('includeStats phải là true/false');
+  }
+
+  /**
+   * Parse giá trị sortBy cho dashboard.
+   * @param input Giá trị query sortBy.
+   * @returns Trường sort hợp lệ.
+   */
+  private parseDashboardSortBy(input?: string): DashboardSortBy {
+    const fallback: DashboardSortBy = 'classCode';
+    if (!input || input.trim() === '') return fallback;
+
+    const normalized = input.trim();
+    const allowed: DashboardSortBy[] = [
+      'className',
+      'classCode',
+      'studentCount',
+      'validPhotoRate',
+      'presentRate',
+      'absentCount',
+      'shareLinkStatus',
+      'remainingDays',
+    ];
+
+    if (!allowed.includes(normalized as DashboardSortBy)) {
+      throw new BadRequestException(`sortBy không hợp lệ. Giá trị hợp lệ: ${allowed.join(', ')}`);
+    }
+
+    return normalized as DashboardSortBy;
+  }
+
+  /**
+   * Parse giá trị sortOrder cho dashboard.
+   * @param input Giá trị query sortOrder.
+   * @returns Hướng sort hợp lệ.
+   */
+  private parseDashboardSortOrder(input?: string): DashboardSortOrder {
+    const fallback: DashboardSortOrder = 'asc';
+    if (!input || input.trim() === '') return fallback;
+
+    const normalized = input.trim().toLowerCase();
+    if (normalized !== 'asc' && normalized !== 'desc') {
+      throw new BadRequestException('sortOrder không hợp lệ. Giá trị hợp lệ: asc, desc');
+    }
+
+    return normalized as DashboardSortOrder;
+  }
+
+  /**
+   * Parse filter trạng thái điểm danh cho dashboard.
+   * @param input Giá trị query attendanceStatus.
+   * @returns Trạng thái hợp lệ hoặc undefined nếu không lọc.
+   */
+  private parseDashboardAttendanceStatus(input?: string): DashboardAttendanceStatusFilter | undefined {
+    if (!input || input.trim() === '') return undefined;
+    const normalized = input.trim().toLowerCase();
+    if (normalized !== 'available' && normalized !== 'no_data') {
+      throw new BadRequestException('attendanceStatus không hợp lệ. Giá trị hợp lệ: available, no_data');
+    }
+    return normalized as DashboardAttendanceStatusFilter;
+  }
+
+  /**
+   * Parse filter trạng thái link chia sẻ cho dashboard.
+   * @param input Giá trị query shareLinkStatus.
+   * @returns Trạng thái hợp lệ hoặc undefined nếu không lọc.
+   */
+  private parseDashboardShareLinkStatus(input?: string): DashboardShareLinkStatusFilter | undefined {
+    if (!input || input.trim() === '') return undefined;
+    const normalized = input.trim().toLowerCase();
+    if (!['no_link', 'active', 'inactive', 'expired'].includes(normalized)) {
+      throw new BadRequestException('shareLinkStatus không hợp lệ. Giá trị hợp lệ: no_link, active, inactive, expired');
+    }
+    return normalized as DashboardShareLinkStatusFilter;
+  }
+
+  /**
+   * Parse chuỗi tìm kiếm cho dashboard.
+   * @param input Giá trị query search.
+   * @returns Chuỗi tìm kiếm đã trim hoặc undefined.
+   */
+  private parseDashboardSearch(input?: string): string | undefined {
+    if (!input) return undefined;
+    const normalized = input.trim();
+    return normalized.length > 0 ? normalized : undefined;
   }
 
   @Get()
@@ -184,6 +274,60 @@ export class ClassesController {
       duplicateAction: body.duplicateAction,
       confirmUpdate: body.confirmUpdate,
       targetClassId: body.targetClassId,
+    });
+  }
+
+  @Get('dashboard/overview')
+  @ApiOperation({ summary: 'Lấy dữ liệu dashboard tổng hợp cho giáo viên hiện tại' })
+  @ApiQuery({ name: 'expiringDays', required: false, example: 3, description: 'Ngưỡng số ngày cho link sắp hết hạn' })
+  @ApiQuery({ name: 'page', required: false, example: 1, description: 'Số trang của bảng lớp' })
+  @ApiQuery({ name: 'limit', required: false, example: 20, description: 'Số lớp tối đa trên mỗi trang' })
+  @ApiQuery({ name: 'search', required: false, example: 'IT', description: 'Tìm theo classCode hoặc className (contains)' })
+  @ApiQuery({ name: 'attendanceStatus', required: false, enum: ['available', 'no_data'] })
+  @ApiQuery({ name: 'shareLinkStatus', required: false, enum: ['no_link', 'active', 'inactive', 'expired'] })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: [
+      'className',
+      'classCode',
+      'studentCount',
+      'validPhotoRate',
+      'presentRate',
+      'absentCount',
+      'shareLinkStatus',
+      'remainingDays',
+    ],
+  })
+  @ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'] })
+  @ApiResponse({ status: 200, description: 'Trả về dữ liệu dashboard gồm tổng quan và tiến độ từng lớp' })
+  /**
+   * Trả dữ liệu dashboard cho giáo viên đã đăng nhập.
+   * @param req Request hiện tại chứa thông tin người dùng đã xác thực.
+   * @param expiringDays Số ngày để cảnh báo link sắp hết hạn.
+   * @returns Dữ liệu tổng quan và bảng tiến độ theo lớp.
+   */
+  async getTeacherDashboardOverview(
+    @Req() req: any,
+    @Query('expiringDays') expiringDays?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('attendanceStatus') attendanceStatus?: string,
+    @Query('shareLinkStatus') shareLinkStatus?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: string,
+  ) {
+    const userId = this.extractUserId(req);
+    return this.classesService.getTeacherDashboardOverview(userId, {
+      expiringSoonDays: this.parsePositiveInt(expiringDays, 3),
+      page: this.parsePositiveInt(page, 1),
+      limit: this.parsePositiveInt(limit, 20),
+      search: this.parseDashboardSearch(search),
+      attendanceStatus: this.parseDashboardAttendanceStatus(attendanceStatus),
+      shareLinkStatus: this.parseDashboardShareLinkStatus(shareLinkStatus),
+      sortBy: this.parseDashboardSortBy(sortBy),
+      sortOrder: this.parseDashboardSortOrder(sortOrder),
     });
   }
 

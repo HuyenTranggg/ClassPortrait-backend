@@ -21,6 +21,7 @@ import { ShareLinkEntity } from '../entities/share-link.entity';
 import { AttendanceEntity } from '../entities/attendance.entity';
 import { ShareLinkSignatureMiddleware } from './middlewares/share-link-signature.middleware';
 import { ClassAttendanceService } from './class-attendance.service';
+import { ClassDashboardService } from './class-dashboard.service';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { ClassAttendanceService } from './class-attendance.service';
     ClassImportService,
     ClassShareService,
     ClassAttendanceService,
+    ClassDashboardService,
     ImportParserService,
     FileImportParserService,
     GoogleSheetParserService,
