@@ -14,6 +14,7 @@ import { ClassImportService } from './class-import.service';
 import { ClassShareService, SharedClassView, ShareLinkView } from './class-share.service';
 import { AttendanceStatus } from '../entities/attendance.entity';
 import { ClassAttendanceService, ClassAttendanceView, AttendanceMutationView } from './class-attendance.service';
+import { ClassDashboardService, TeacherDashboardOverview, TeacherDashboardQueryOptions } from './class-dashboard.service';
 
 @Injectable()
 export class ClassesService {
@@ -23,6 +24,7 @@ export class ClassesService {
     private readonly importHistoryService: ImportHistoryService,
     private readonly classShareService: ClassShareService,
     private readonly classAttendanceService: ClassAttendanceService,
+    private readonly classDashboardService: ClassDashboardService,
   ) {}
 
   async getImportHistoryByUser(
@@ -181,5 +183,18 @@ export class ClassesService {
    */
   async resetAttendance(classId: string, userId: string, status: AttendanceStatus = AttendanceStatus.ABSENT) {
     return this.classAttendanceService.resetAttendance(classId, userId, status);
+  }
+
+  /**
+   * Lấy dữ liệu dashboard tổng hợp cho giáo viên hiện tại.
+   * @param userId ID người dùng hiện tại.
+   * @param options Bộ tùy chọn filter/sort/pagination của dashboard.
+   * @returns Snapshot dữ liệu dashboard.
+   */
+  async getTeacherDashboardOverview(
+    userId: string,
+    options?: TeacherDashboardQueryOptions,
+  ): Promise<TeacherDashboardOverview> {
+    return this.classDashboardService.getTeacherOverview(userId, options);
   }
 }
