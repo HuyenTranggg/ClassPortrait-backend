@@ -4,6 +4,8 @@ import { ClassImportInfo, ImportClassOptions, ImportExtractedData, ImportMapping
 
 @Injectable()
 export class ImportMappingService {
+  private static readonly MSSV_PATTERN = /^[MPTmpt0-9]{8,10}$/;
+
   private normalizeForCompare(value: string): string {
     return value
       .toLowerCase()
@@ -17,7 +19,28 @@ export class ImportMappingService {
   }
 
   private isValidMssv(value: string): boolean {
-    return /^[A-Za-z0-9._-]{4,30}$/.test(value);
+    return ImportMappingService.MSSV_PATTERN.test(value);
+  }
+
+  private getMssvRuleDescription(): string {
+    return 'MSSV phải dài từ 8 đến 10 ký tự và chỉ chứa số 0-9 hoặc ký tự M/P/T (không phân biệt hoa-thường)';
+  }
+
+  private throwInvalidRowsError(invalidRows: Array<{ rowNumber: number; reason: string }>): never {
+    const previewItems = invalidRows.slice(0, 5).map((item) => `dòng ${item.rowNumber} (${item.reason})`);
+    const previewText = previewItems.join(', ');
+    const moreCount = Math.max(0, invalidRows.length - previewItems.length);
+
+    const message =
+      moreCount > 0
+        ? `Phát hiện ${invalidRows.length} dòng dữ liệu không hợp lệ: ${previewText}, và ${moreCount} dòng khác. ${this.getMssvRuleDescription()}.`
+        : `Phát hiện ${invalidRows.length} dòng dữ liệu không hợp lệ: ${previewText}. ${this.getMssvRuleDescription()}.`;
+
+    throw new BadRequestException({
+      code: 'INVALID_IMPORT_DATA',
+      message,
+      invalidRows,
+    });
   }
 
   private findHeaderKey(headers: string[], requestedHeader: string): string | undefined {
@@ -168,6 +191,7 @@ export class ImportMappingService {
     const seenMssv = new Set<string>();
     const students: Student[] = [];
     let skippedRows = 0;
+    const invalidRows: Array<{ rowNumber: number; reason: string }> = [];
 
     filteredRows.forEach((row) => {
       const mssv = this.cleanCellValue(row[mssvKey]);
@@ -178,8 +202,30 @@ export class ImportMappingService {
         return;
       }
 
-      if (!mssv || !this.isValidMssv(mssv) || seenMssv.has(mssv)) {
+      if (!mssv) {
         skippedRows += 1;
+        invalidRows.push({
+          rowNumber: row.__rowNumber,
+          reason: 'Thiếu MSSV',
+        });
+        return;
+      }
+
+      if (!this.isValidMssv(mssv)) {
+        skippedRows += 1;
+        invalidRows.push({
+          rowNumber: row.__rowNumber,
+          reason: `MSSV "${mssv}" không đúng định dạng`,
+        });
+        return;
+      }
+
+      if (seenMssv.has(mssv)) {
+        skippedRows += 1;
+        invalidRows.push({
+          rowNumber: row.__rowNumber,
+          reason: `MSSV "${mssv}" bị trùng trong file import`,
+        });
         return;
       }
 
@@ -194,6 +240,10 @@ export class ImportMappingService {
 
     const totalRowsRead = filteredRows.length;
     const importedRows = students.length;
+
+    if (invalidRows.length > 0) {
+      this.throwInvalidRowsError(invalidRows);
+    }
 
     if (importedRows === 0) {
       throw new BadRequestException('Không tìm thấy sinh viên hợp lệ sau khi áp dụng mapping cột');
