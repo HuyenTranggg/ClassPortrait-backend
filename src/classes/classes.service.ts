@@ -83,10 +83,16 @@ export class ClassesService {
    * @param classId ID lớp học cần chia sẻ.
    * @param userId ID người dùng thực hiện thao tác.
    * @param expiresInDays Số ngày hiệu lực của link (nếu có).
+   * @param requireLogin Yêu cầu người xem đăng nhập hay không.
    * @returns Thông tin link chia sẻ đã được tạo.
    */
-  async createShareLink(classId: string, userId: string, expiresInDays?: number): Promise<ShareLinkView> {
-    return this.classShareService.createShareLink(classId, userId, expiresInDays);
+  async createShareLink(
+    classId: string,
+    userId: string,
+    expiresInDays?: number,
+    requireLogin?: boolean,
+  ): Promise<ShareLinkView> {
+    return this.classShareService.createShareLink(classId, userId, expiresInDays, requireLogin);
   }
 
   /**
@@ -100,7 +106,7 @@ export class ClassesService {
   }
 
   /**
-   * Cập nhật trạng thái hoặc hạn dùng của link chia sẻ.
+   * Cập nhật trạng thái, hạn dùng hoặc chế độ truy cập của link chia sẻ.
    * @param classId ID lớp học.
    * @param userId ID người dùng sở hữu lớp.
    * @param payload Dữ liệu cập nhật link chia sẻ.
@@ -109,7 +115,7 @@ export class ClassesService {
   async updateShareLink(
     classId: string,
     userId: string,
-    payload: { isActive?: boolean; expiresAt?: string },
+    payload: { isActive?: boolean; expiresAt?: string; requireLogin?: boolean },
   ): Promise<ShareLinkView> {
     return this.classShareService.updateShareLink(classId, userId, payload);
   }
@@ -129,10 +135,16 @@ export class ClassesService {
    * @param shareId ID của share link.
    * @param exp Unix timestamp milliseconds của thời điểm hết hạn.
    * @param sig Chữ ký HMAC đảm bảo tính toàn vẹn của link.
+   * @param viewerUserId ID người xem nếu đã đăng nhập, undefined nếu ẩn danh.
    * @returns Thông tin lớp và danh sách sinh viên phục vụ trang chia sẻ.
    */
-  async getSharedClassBySignedLink(shareId: string, exp: number, sig: string): Promise<SharedClassView> {
-    return this.classShareService.getSharedClassBySignedLink(shareId, exp, sig);
+  async getSharedClassBySignedLink(
+    shareId: string,
+    exp: number,
+    sig: string,
+    viewerUserId?: string,
+  ): Promise<SharedClassView> {
+    return this.classShareService.getSharedClassBySignedLink(shareId, exp, sig, viewerUserId);
   }
 
   /**

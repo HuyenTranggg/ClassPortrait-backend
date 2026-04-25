@@ -23,6 +23,10 @@ export class ShareLinkEntity {
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
 
+  // Yêu cầu người xem phải đăng nhập tài khoản HUST mới xem được.
+  @Column({ name: 'require_login', type: 'boolean', default: false })
+  requireLogin!: boolean;
+
   // Mốc hết hạn của link; null nghĩa là không hết hạn.
   @Column({ name: 'expires_at', type: 'timestamp', nullable: true })
   expiresAt!: Date | null;

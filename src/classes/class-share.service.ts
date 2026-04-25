@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
@@ -17,6 +17,7 @@ export type ShareLinkView = {
   token: string;
   shareUrl: string;
   isActive: boolean;
+  requireLogin: boolean;
   expiresAt: Date | null;
   createdAt: Date;
 };
@@ -132,6 +133,7 @@ export class ClassShareService {
       token: entity.token,
       shareUrl: this.buildShareUrl(entity.id, exp, sig),
       isActive: entity.isActive,
+      requireLogin: entity.requireLogin,
       expiresAt: entity.expiresAt,
       createdAt: entity.createdAt,
     };
@@ -142,9 +144,15 @@ export class ClassShareService {
    * @param classId ID lớp cần chia sẻ.
    * @param userId ID người dùng tạo link.
    * @param expiresInDays Số ngày hiệu lực của link (nếu truyền vào).
+   * @param requireLogin Yêu cầu người xem phải đăng nhập hay không.
    * @returns Thông tin link chia sẻ vừa được tạo.
    */
-  async createShareLink(classId: string, userId: string, expiresInDays?: number): Promise<ShareLinkView> {
+  async createShareLink(
+    classId: string,
+    userId: string,
+    expiresInDays?: number,
+    requireLogin = false,
+  ): Promise<ShareLinkView> {
     await this.assertClassOwnership(classId, userId);
 
     const existing = await this.shareLinksRepository.findOne({ where: { classId } });
@@ -159,6 +167,7 @@ export class ClassShareService {
       classId,
       token,
       isActive: true,
+      requireLogin,
       expiresAt,
     });
 
@@ -181,16 +190,16 @@ export class ClassShareService {
   }
 
   /**
-   * Cập nhật trạng thái hoặc hạn dùng của link chia sẻ.
+   * Cập nhật trạng thái, hạn dùng hoặc chế độ truy cập của link chia sẻ.
    * @param classId ID lớp có link cần cập nhật.
    * @param userId ID người dùng sở hữu lớp.
-   * @param payload Dữ liệu cập nhật gồm isActive và/hoặc expiresAt.
+   * @param payload Dữ liệu cập nhật gồm isActive, expiresAt và/hoặc requireLogin.
    * @returns Thông tin link chia sẻ sau cập nhật.
    */
   async updateShareLink(
     classId: string,
     userId: string,
-    payload: { isActive?: boolean; expiresAt?: string },
+    payload: { isActive?: boolean; expiresAt?: string; requireLogin?: boolean },
   ): Promise<ShareLinkView> {
     await this.assertClassOwnership(classId, userId);
 
@@ -201,6 +210,9 @@ export class ClassShareService {
 
     if (typeof payload.isActive === 'boolean') {
       shareLink.isActive = payload.isActive;
+    }
+    if (typeof payload.requireLogin === 'boolean') {
+      shareLink.requireLogin = payload.requireLogin;
     }
     if (payload.expiresAt !== undefined) {
       shareLink.expiresAt = payload.expiresAt ? new Date(payload.expiresAt) : null;
@@ -237,9 +249,15 @@ export class ClassShareService {
    * @param shareId ID bản ghi share link.
    * @param exp Unix timestamp milliseconds của thời điểm hết hạn.
    * @param sig Chữ ký HMAC đảm bảo tính toàn vẹn của link.
+   * @param viewerUserId ID người xem nếu đã đăng nhập, undefined nếu ẩn danh.
    * @returns Thông tin lớp và danh sách sinh viên kèm URL ảnh đã ký.
    */
-  async getSharedClassBySignedLink(shareId: string, exp: number, sig: string): Promise<SharedClassView> {
+  async getSharedClassBySignedLink(
+    shareId: string,
+    exp: number,
+    sig: string,
+    viewerUserId?: string,
+  ): Promise<SharedClassView> {
     if (!Number.isInteger(exp) || exp <= 0) {
       throw new ForbiddenException('Thoi diem het han trong link khong hop le');
     }
@@ -264,6 +282,11 @@ export class ClassShareService {
 
     if (!shareLink.isActive) {
       throw new ForbiddenException('Link chia se da bi vo hieu hoa');
+    }
+
+    // Nếu link yêu cầu đăng nhập mà người xem chưa xác thực → từ chối.
+    if (shareLink.requireLogin && !viewerUserId) {
+      throw new UnauthorizedException('Link nay yeu cau dang nhap tai khoan HUST de xem');
     }
 
     const expectedExp = resolveShareLinkExpiresAt(shareLink.expiresAt);
