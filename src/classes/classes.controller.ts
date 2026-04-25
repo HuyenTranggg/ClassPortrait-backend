@@ -370,7 +370,7 @@ export class ClassesController {
   /**
    * Tạo link chia sẻ cho một lớp thuộc quyền sở hữu của người dùng hiện tại.
    * @param id ID lớp học.
-   * @param body Dữ liệu tạo link (ví dụ số ngày hết hạn).
+   * @param body Dữ liệu tạo link (số ngày hết hạn, chế độ truy cập).
    * @param req Request chứa thông tin người dùng đã xác thực.
    * @returns Thông tin link chia sẻ vừa tạo.
    */
@@ -380,7 +380,7 @@ export class ClassesController {
     @Req() req: any,
   ) {
     const userId = this.extractUserId(req);
-    return this.classesService.createShareLink(id, userId, body.expiresInDays);
+    return this.classesService.createShareLink(id, userId, body.expiresInDays, body.requireLogin);
   }
 
   @Get(':id/share-link')
@@ -403,9 +403,9 @@ export class ClassesController {
   @ApiParam({ name: 'id', description: 'ID của lớp' })
   @ApiResponse({ status: 200, description: 'Cập nhật link chia sẻ thành công' })
   /**
-   * Cập nhật trạng thái hoạt động hoặc hạn dùng của link chia sẻ.
+   * Cập nhật trạng thái hoạt động, hạn dùng hoặc chế độ truy cập của link chia sẻ.
    * @param id ID lớp học.
-   * @param body Dữ liệu cập nhật link (isActive, expiresAt).
+   * @param body Dữ liệu cập nhật link (isActive, expiresAt, requireLogin).
    * @param req Request chứa thông tin người dùng đã xác thực.
    * @returns Thông tin link sau khi cập nhật.
    */
@@ -418,6 +418,7 @@ export class ClassesController {
     return this.classesService.updateShareLink(id, userId, {
       isActive: body.isActive,
       expiresAt: body.expiresAt,
+      requireLogin: body.requireLogin,
     });
   }
 
@@ -445,13 +446,23 @@ export class ClassesController {
   @ApiResponse({ status: 200, description: 'Trả về dữ liệu lớp và danh sách sinh viên' })
   /**
     * Trả về dữ liệu sổ ảnh cho người dùng truy cập bằng link đã ký.
+   * Nếu link có requireLogin=true, cần đăng nhập trước (trả 401 nếu chưa).
    * @param id ID của share link.
    * @param exp Unix timestamp milliseconds biểu diễn thời điểm hết hạn.
    * @param sig Chữ ký HMAC đảm bảo id và exp không bị chỉnh sửa.
+   * @param req Request hiện tại (có thể có JWT nếu người dùng đang đăng nhập).
    * @returns Thông tin lớp và danh sách sinh viên kèm URL ảnh đã ký.
    */
-  async getSharedClass(@Param('id') id: string, @Query('exp') exp: string, @Query('sig') sig: string) {
-    return this.classesService.getSharedClassBySignedLink(id, Number(exp), sig);
+  async getSharedClass(
+    @Param('id') id: string,
+    @Query('exp') exp: string,
+    @Query('sig') sig: string,
+    @Req() req: any,
+  ) {
+    // JwtAuthGuard tự động populate req.user nếu route @Public() có Bearer token hợp lệ.
+    // Không có token → req.user = undefined → viewerUserId = undefined.
+    const viewerUserId: string | undefined = req.user?.userId ?? req.user?.sub ?? undefined;
+    return this.classesService.getSharedClassBySignedLink(id, Number(exp), sig, viewerUserId);
   }
 
   @Get(':id/attendance')

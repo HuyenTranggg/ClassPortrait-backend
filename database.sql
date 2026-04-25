@@ -108,7 +108,8 @@ CREATE TABLE share_links (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     class_id UUID NOT NULL UNIQUE,
     token VARCHAR(255) UNIQUE NOT NULL,
-    is_active BOOLEAN DEFAULT TRUE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    require_login BOOLEAN NOT NULL DEFAULT FALSE,
     expires_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -136,3 +137,10 @@ CREATE INDEX idx_attendance_class_id
 SELECT table_name
 FROM information_schema.tables
 WHERE table_schema = 'public';
+
+-- =============================================================
+-- MIGRATION: thêm cột require_login cho DB đang chạy
+-- Chạy script này một lần nếu DB đã tồn tại trước khi thêm feature.
+-- =============================================================
+-- ALTER TABLE share_links
+--     ADD COLUMN IF NOT EXISTS require_login BOOLEAN NOT NULL DEFAULT FALSE;

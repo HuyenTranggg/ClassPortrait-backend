@@ -44,6 +44,7 @@ export type TeacherDashboardClassItem = {
     status: 'no_link' | 'active' | 'inactive' | 'expired';
     isActive: boolean;
     isExpired: boolean;
+    requireLogin: boolean;
     expiresAt: Date | null;
     remainingDays: number | null;
   };
@@ -421,6 +422,7 @@ export class ClassDashboardService {
           status,
           isActive,
           isExpired,
+          requireLogin: shareLink?.requireLogin ?? false,
           expiresAt,
           remainingDays,
         },
