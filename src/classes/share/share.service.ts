@@ -2,15 +2,15 @@ import { ConflictException, ForbiddenException, Injectable, NotFoundException, U
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
-import { signPhotoUrl } from '../common/utils/photo-signature.util';
+import { signPhotoUrl } from '../../common/utils/photo-signature.util';
 import {
   resolveShareLinkExpiresAt,
   signShareLink,
   verifyShareLinkSignature,
-} from '../common/utils/share-link-signature.util';
+} from '../../common/utils/share-link-signature.util';
 import { ClassEntity } from '../entities/class.entity';
-import { ShareLinkEntity } from '../entities/share-link.entity';
-import { StudentEntity } from '../entities/student.entity';
+import { ShareLinkEntity } from './entities/share-link.entity';
+import { StudentEntity } from '../../students/entities/student.entity';
 
 export type ShareLinkView = {
   id: string;

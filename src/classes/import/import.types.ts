@@ -1,5 +1,5 @@
 import { Student } from '../../common/types';
-import { ImportAction, ImportChangesSummary, SourceType } from '../../entities/import-history.entity';
+import { ImportAction, ImportChangesSummary, SourceType } from './entities/import-history.entity';
 
 export type ImportMappingMode = 'auto' | 'manual';
 export type DuplicateAction = 'ask' | 'create_new' | 'update_existing';

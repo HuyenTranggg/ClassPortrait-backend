@@ -8,13 +8,13 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ClassEntity } from '../entities/class.entity';
-import { ImportHistoryEntity, SourceType } from '../entities/import-history.entity';
-import { StudentEntity } from '../entities/student.entity';
-import { ImportDuplicateService } from './import/import-duplicate.service';
-import { ImportHistoryService } from './import/import-history.service';
-import { ImportMappingService } from './import/import-mapping.service';
-import { ImportParserService } from './import/import-parser.service';
-import { ImportClassOptions, ImportClassResult, PersistImportPayload } from './import/import.types';
+import { ImportHistoryEntity, SourceType } from './entities/import-history.entity';
+import { StudentEntity } from '../../students/entities/student.entity';
+import { ImportDuplicateService } from './services/import-duplicate.service';
+import { ImportHistoryService } from './services/import-history.service';
+import { ImportMappingService } from './services/import-mapping.service';
+import { ImportParserService } from './services/import-parser.service';
+import { ImportClassOptions, ImportClassResult, PersistImportPayload } from './import.types';
 
 @Injectable()
 export class ClassImportService {

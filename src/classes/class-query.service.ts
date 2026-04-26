@@ -3,8 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Class, ClassWithStudents, Student } from '../common/types';
 import { signPhotoUrl } from '../common/utils/photo-signature.util';
-import { ClassEntity } from '../entities/class.entity';
-import { StudentEntity } from '../entities/student.entity';
+import { ClassEntity } from './entities/class.entity';
+import { StudentEntity } from '../students/entities/student.entity';
 
 @Injectable()
 export class ClassQueryService {

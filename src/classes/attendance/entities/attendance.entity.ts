@@ -1,6 +1,6 @@
 import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, Unique } from 'typeorm';
-import { ClassEntity } from './class.entity';
-import { StudentEntity } from './student.entity';
+import { ClassEntity } from '../../entities/class.entity';
+import { StudentEntity } from '../../../students/entities/student.entity';
 
 export enum AttendanceStatus {
   PRESENT = 'present',

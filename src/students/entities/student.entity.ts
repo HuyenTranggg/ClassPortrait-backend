@@ -1,6 +1,6 @@
 import { Column, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn, JoinColumn } from 'typeorm';
-import { ClassEntity } from './class.entity';
-import { AttendanceEntity } from './attendance.entity';
+import { ClassEntity } from '../../classes/entities/class.entity';
+import { AttendanceEntity } from '../../classes/attendance/entities/attendance.entity';
 
 export enum PhotoStatus {
   PENDING = 'pending',

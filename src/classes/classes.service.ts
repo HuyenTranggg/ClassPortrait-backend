@@ -2,19 +2,19 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Class, Student, ClassWithStudents } from '../common/types';
-import { SourceType } from '../entities/import-history.entity';
+import { SourceType } from './import/entities/import-history.entity';
 import {
   ImportClassOptions,
   ImportClassResult,
   ImportHistoryListResult,
 } from './import/import.types';
-import { ImportHistoryService } from './import/import-history.service';
+import { ImportHistoryService } from './import/services/import-history.service';
 import { ClassQueryService } from './class-query.service';
-import { ClassImportService } from './class-import.service';
-import { ClassShareService, SharedClassView, ShareLinkView } from './class-share.service';
-import { AttendanceStatus } from '../entities/attendance.entity';
-import { ClassAttendanceService, ClassAttendanceView, AttendanceMutationView } from './class-attendance.service';
-import { ClassDashboardService, TeacherDashboardOverview, TeacherDashboardQueryOptions } from './class-dashboard.service';
+import { ClassImportService } from './import/import.service';
+import { ClassShareService, SharedClassView, ShareLinkView } from './share/share.service';
+import { AttendanceStatus } from './attendance/entities/attendance.entity';
+import { ClassAttendanceService, ClassAttendanceView, AttendanceMutationView } from './attendance/attendance.service';
+import { ClassDashboardService, TeacherDashboardOverview, TeacherDashboardQueryOptions } from './dashboard/dashboard.service';
 
 @Injectable()
 export class ClassesService {

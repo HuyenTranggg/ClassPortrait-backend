@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ImportAction, ImportChangesSummary, ImportHistoryEntity, SourceType } from '../../entities/import-history.entity';
+import { ImportAction, ImportChangesSummary, ImportHistoryEntity, SourceType } from '../entities/import-history.entity';
 import {
   ImportHistoryItem,
   ImportHistoryListResult,
   ImportHistoryQueryOptions,
   PersistImportPayload,
-} from './import.types';
+} from '../import.types';
 
 @Injectable()
 export class ImportHistoryService {

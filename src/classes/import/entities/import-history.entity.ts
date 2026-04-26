@@ -6,8 +6,8 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { ClassEntity } from './class.entity';
-import { UserEntity } from './user.entity';
+import { ClassEntity } from '../../entities/class.entity';
+import { UserEntity } from '../../../auth/entities/user.entity';
 
 export enum SourceType {
   EXCEL = 'excel',

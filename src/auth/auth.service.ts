@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
 import { LoginDto } from './dto/login.dto';
-import { UserEntity } from '../entities/user.entity';
+import { UserEntity } from './entities/user.entity';
 import { Repository } from 'typeorm';
 
 const HUST_AUTH_URL = 'https://api.toolhub.app/hust/KiemTraMatKhau';
