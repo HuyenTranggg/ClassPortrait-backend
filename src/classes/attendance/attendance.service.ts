@@ -1,9 +1,9 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { AttendanceEntity, AttendanceStatus } from '../entities/attendance.entity';
+import { AttendanceEntity, AttendanceStatus } from './entities/attendance.entity';
 import { ClassEntity } from '../entities/class.entity';
-import { StudentEntity } from '../entities/student.entity';
+import { StudentEntity } from '../../students/entities/student.entity';
 
 export type AttendanceStudentView = {
   studentId: string;

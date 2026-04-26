@@ -8,12 +8,12 @@ import { StudentsModule } from './students/students.module';
 import { ClassesModule } from './classes/classes.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
-import { UserEntity } from './entities/user.entity';
-import { ClassEntity } from './entities/class.entity';
-import { StudentEntity } from './entities/student.entity';
-import { ImportHistoryEntity } from './entities/import-history.entity';
-import { ShareLinkEntity } from './entities/share-link.entity';
-import { AttendanceEntity } from './entities/attendance.entity';
+import { UserEntity } from './auth/entities/user.entity';
+import { ClassEntity } from './classes/entities/class.entity';
+import { StudentEntity } from './students/entities/student.entity';
+import { ImportHistoryEntity } from './classes/import/entities/import-history.entity';
+import { ShareLinkEntity } from './classes/share/entities/share-link.entity';
+import { AttendanceEntity } from './classes/attendance/entities/attendance.entity';
 
 @Module({
   imports: [

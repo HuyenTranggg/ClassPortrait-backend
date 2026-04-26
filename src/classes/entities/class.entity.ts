@@ -7,11 +7,11 @@ import {
   PrimaryGeneratedColumn,
   JoinColumn,
 } from 'typeorm';
-import { UserEntity } from './user.entity';
-import { StudentEntity } from './student.entity';
-import { ImportHistoryEntity } from './import-history.entity';
-import { ShareLinkEntity } from './share-link.entity';
-import { AttendanceEntity } from './attendance.entity';
+import { UserEntity } from '../../auth/entities/user.entity';
+import { StudentEntity } from '../../students/entities/student.entity';
+import { ImportHistoryEntity } from '../import/entities/import-history.entity';
+import { ShareLinkEntity } from '../share/entities/share-link.entity';
+import { AttendanceEntity } from '../attendance/entities/attendance.entity';
 
 @Entity('classes')
 export class ClassEntity {

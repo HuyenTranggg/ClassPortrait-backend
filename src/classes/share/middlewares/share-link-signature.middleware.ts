@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NestMiddleware } from '@nestjs/common';
 import { NextFunction, Request, Response } from 'express';
-import { verifyShareLinkSignature } from '../../common/utils/share-link-signature.util';
+import { verifyShareLinkSignature } from '../../../common/utils/share-link-signature.util';
 
 @Injectable()
 export class ShareLinkSignatureMiddleware implements NestMiddleware {

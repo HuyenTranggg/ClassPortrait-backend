@@ -1,6 +1,6 @@
 import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
-import { ClassEntity } from './class.entity';
-import { ImportHistoryEntity } from './import-history.entity';
+import { ClassEntity } from '../../classes/entities/class.entity';
+import { ImportHistoryEntity } from '../../classes/import/entities/import-history.entity';
 
 @Entity('users')
 export class UserEntity {
@@ -19,4 +19,3 @@ export class UserEntity {
   @OneToMany(() => ImportHistoryEntity, (history) => history.user)
   importHistories!: ImportHistoryEntity[];
 }
-

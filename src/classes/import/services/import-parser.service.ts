@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { ParsedImportData } from './import.types';
-import { SourceType } from '../../entities/import-history.entity';
+import { ParsedImportData } from '../import.types';
+import { SourceType } from '../entities/import-history.entity';
 import { FileImportParserService } from './file-import-parser.service';
 import { GoogleSheetParserService } from './google-sheet-parser.service';
 

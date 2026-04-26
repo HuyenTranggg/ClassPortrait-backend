@@ -3,8 +3,8 @@ import axios from 'axios';
 import { Readable, Stream } from 'stream';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { StudentEntity, PhotoStatus } from '../entities/student.entity';
-import { ClassEntity } from '../entities/class.entity';
+import { StudentEntity, PhotoStatus } from './entities/student.entity';
+import { ClassEntity } from '../classes/entities/class.entity';
 import { verifyPhotoSignature } from '../common/utils/photo-signature.util';
 
 export type StudentPhotoResult = {

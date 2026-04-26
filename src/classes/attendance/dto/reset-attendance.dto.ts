@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsIn, IsOptional } from 'class-validator';
-import { AttendanceStatus } from '../../entities/attendance.entity';
+import { AttendanceStatus } from '../entities/attendance.entity';
 
 export class ResetAttendanceDto {
   @ApiProperty({

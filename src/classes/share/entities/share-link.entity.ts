@@ -1,5 +1,5 @@
 import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
-import { ClassEntity } from './class.entity';
+import { ClassEntity } from '../../entities/class.entity';
 
 @Entity('share_links')
 export class ShareLinkEntity {

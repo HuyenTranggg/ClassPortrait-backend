@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, UnprocessableEntityException } from '@nestjs/common';
-import { Student } from '../../common/types';
-import { ClassImportInfo, ImportClassOptions, ImportExtractedData, ImportMappingMode } from './import.types';
+import { Student } from '../../../common/types';
+import { ClassImportInfo, ImportClassOptions, ImportExtractedData, ImportMappingMode } from '../import.types';
 
 @Injectable()
 export class ImportMappingService {

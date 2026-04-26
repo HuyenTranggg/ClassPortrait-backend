@@ -2,10 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { ClassEntity } from '../../entities/class.entity';
-import { StudentEntity } from '../../entities/student.entity';
-import { Student } from '../../common/types';
-import { ImportChangesSummary } from '../../entities/import-history.entity';
-import { ClassImportInfo, DuplicateAction, ImportDuplicateDecisionPayload } from './import.types';
+import { StudentEntity } from '../../../students/entities/student.entity';
+import { Student } from '../../../common/types';
+import { ImportChangesSummary } from '../entities/import-history.entity';
+import { ClassImportInfo, DuplicateAction, ImportDuplicateDecisionPayload } from '../import.types';
 
 @Injectable()
 export class ImportDuplicateService {
