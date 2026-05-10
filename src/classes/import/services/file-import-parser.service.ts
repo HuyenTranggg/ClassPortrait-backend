@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import csvParser from 'csv-parser';
 import { Readable } from 'stream';
-import { ParsedImportData } from '../import.types';
+import { ParsedImportData, ImportRow } from '../import.types';
 import { SourceType } from '../entities/import-history.entity';
 
 @Injectable()
@@ -87,10 +87,10 @@ export class FileImportParserService {
       .map((cell, index) => this.cleanCellValue(cell) || `Column ${index + 1}`)
       .map((header) => header.trim());
 
-    const rows: Array<Record<string, any> & { __rowNumber: number }> = [];
+    const rows: ImportRow[] = [];
     for (let rowIndex = headerRowIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
       const sourceRow = matrix[rowIndex] ?? [];
-      const rowObject: Record<string, any> & { __rowNumber: number } = {
+      const rowObject: ImportRow = {
         __rowNumber: rowIndex + 1,
       };
 
@@ -110,7 +110,7 @@ export class FileImportParserService {
 
   private async parseCsvFile(buffer: Buffer): Promise<ParsedImportData> {
     return new Promise((resolve, reject) => {
-      const results: Array<Record<string, any> & { __rowNumber: number }> = [];
+      const results: ImportRow[] = [];
       const headersSet = new Set<string>();
       const stream = Readable.from(buffer);
       let dataRowIndex = 0;
@@ -119,7 +119,7 @@ export class FileImportParserService {
         .pipe(csvParser())
         .on('data', (data) => {
           dataRowIndex += 1;
-          const row: Record<string, any> & { __rowNumber: number } = {
+          const row: ImportRow = {
             __rowNumber: dataRowIndex + 1,
           };
 
@@ -146,11 +146,11 @@ export class FileImportParserService {
     const jsonString = buffer.toString('utf-8');
     const data = JSON.parse(jsonString);
     const list = Array.isArray(data) ? data : [data];
-    const rows: Array<Record<string, any> & { __rowNumber: number }> = [];
+    const rows: ImportRow[] = [];
     const headersSet = new Set<string>();
 
     list.forEach((item, index) => {
-      const row: Record<string, any> & { __rowNumber: number } = {
+      const row: ImportRow = {
         __rowNumber: index + 1,
       };
 

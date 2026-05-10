@@ -24,65 +24,106 @@ export class ClassQueryService {
     return `${baseUrl.replace(/\/$/, '')}/students/${encodeURIComponent(mssv)}/photo?classId=${encodeURIComponent(classId)}&exp=${expiresAt}&sig=${signature}`;
   }
 
-  async findAll(): Promise<Class[]> {
-    const entities = await this.classesRepository.find({ order: { createdAt: 'DESC' } });
+  async findAll(userId: string): Promise<Class[]> {
+    const entities = await this.classesRepository.find({
+      where: { userId },
+      order: { createdAt: 'DESC', importOrder: 'ASC' },
+    });
 
     return entities.map<Class>((entity) => ({
       id: entity.id,
-      classCode: entity.classCode,
-      courseCode: entity.courseCode ?? undefined,
-      courseName: entity.courseName ?? undefined,
-      semester: entity.semester ?? undefined,
-      department: entity.department ?? undefined,
-      classType: entity.classType ?? undefined,
-      instructor: entity.instructor ?? undefined,
+      classExamCode: entity.classExamCode ?? undefined,
+      examDate: entity.examDate ?? undefined,
+      examRoom: entity.examRoom ?? undefined,
+      examTime: entity.examTime ?? undefined,
+      examShift: entity.examShift ?? undefined,
+      semester: entity.semester,
+      courseCode: entity.courseCode,
+      courseName: entity.courseName,
+      department: entity.department,
+      instructor: entity.instructor,
+      importOrder: entity.importOrder,
       createdAt: entity.createdAt,
     }));
   }
 
-  async findAllWithStudentCount(userId: string): Promise<Array<Class & { studentCount: number }>> {
+  async findAllWithStudentCount(userId: string): Promise<Array<Class & { studentCount: number; classCodes: string[] }>> {
+    // Lấy tất cả lớp với số sinh viên
     const rows = await this.classesRepository
       .createQueryBuilder('c')
       .leftJoin('c.students', 's')
       .where('c.userId = :userId', { userId })
       .select('c.id', 'id')
-      .addSelect('c.classCode', 'classCode')
+      .addSelect('c.classExamCode', 'classExamCode')
+      .addSelect('c.examDate', 'examDate')
+      .addSelect('c.examRoom', 'examRoom')
+      .addSelect('c.examTime', 'examTime')
+      .addSelect('c.examShift', 'examShift')
+      .addSelect('c.semester', 'semester')
       .addSelect('c.courseCode', 'courseCode')
       .addSelect('c.courseName', 'courseName')
-      .addSelect('c.semester', 'semester')
       .addSelect('c.department', 'department')
-      .addSelect('c.classType', 'classType')
       .addSelect('c.instructor', 'instructor')
+      .addSelect('c.importOrder', 'importOrder')
       .addSelect('c.createdAt', 'createdAt')
       .addSelect('COUNT(s.id)', 'studentCount')
       .groupBy('c.id')
       .orderBy('c.createdAt', 'DESC')
+      .addOrderBy('c.importOrder', 'ASC')
       .getRawMany<{
         id: string;
-        classCode: string;
-        courseCode: string | null;
-        courseName: string | null;
-        semester: string | null;
-        department: string | null;
-        classType: string | null;
-        instructor: string | null;
+        classExamCode: string | null;
+        examDate: Date | null;
+        examRoom: string | null;
+        examTime: string | null;
+        examShift: string | null;
+        semester: string;
+        courseCode: string;
+        courseName: string;
+        department: string;
+        instructor: string;
+        importOrder: number;
         createdAt: Date;
         studentCount: string;
       }>();
 
+    if (rows.length === 0) return [];
+
+    // Lấy distinct classCodes của mỗi lớp
+    const classIds = rows.map((r) => r.id);
+    const codeRows = await this.studentsRepository
+      .createQueryBuilder('s')
+      .select('s.classId', 'classId')
+      .addSelect('s.classCode', 'classCode')
+      .where('s.classId IN (:...classIds)', { classIds })
+      .distinct(true)
+      .getRawMany<{ classId: string; classCode: string }>();
+
+    const codeMap = new Map<string, Set<string>>();
+    for (const { classId, classCode } of codeRows) {
+      if (!codeMap.has(classId)) codeMap.set(classId, new Set());
+      codeMap.get(classId)!.add(classCode);
+    }
+
     return rows.map((row) => ({
       id: row.id,
-      classCode: row.classCode,
-      courseCode: row.courseCode ?? undefined,
-      courseName: row.courseName ?? undefined,
-      semester: row.semester ?? undefined,
-      department: row.department ?? undefined,
-      classType: row.classType ?? undefined,
-      instructor: row.instructor ?? undefined,
+      classExamCode: row.classExamCode ?? undefined,
+      examDate: row.examDate ?? undefined,
+      examRoom: row.examRoom ?? undefined,
+      examTime: row.examTime ?? undefined,
+      examShift: row.examShift ?? undefined,
+      semester: row.semester,
+      courseCode: row.courseCode,
+      courseName: row.courseName,
+      department: row.department,
+      instructor: row.instructor,
+      importOrder: row.importOrder,
       createdAt: row.createdAt,
       studentCount: Number(row.studentCount),
+      classCodes: Array.from(codeMap.get(row.id) ?? []).sort(),
     }));
   }
+
 
   async findOne(id: string, userId: string): Promise<Class> {
     const entity = await this.classesRepository.findOne({ where: { id, userId } });
@@ -92,13 +133,17 @@ export class ClassQueryService {
 
     return {
       id: entity.id,
-      classCode: entity.classCode,
-      courseCode: entity.courseCode ?? undefined,
-      courseName: entity.courseName ?? undefined,
-      semester: entity.semester ?? undefined,
-      department: entity.department ?? undefined,
-      classType: entity.classType ?? undefined,
-      instructor: entity.instructor ?? undefined,
+      classExamCode: entity.classExamCode ?? undefined,
+      examDate: entity.examDate ?? undefined,
+      examRoom: entity.examRoom ?? undefined,
+      examTime: entity.examTime ?? undefined,
+      examShift: entity.examShift ?? undefined,
+      semester: entity.semester,
+      courseCode: entity.courseCode,
+      courseName: entity.courseName,
+      department: entity.department,
+      instructor: entity.instructor,
+      importOrder: entity.importOrder,
       createdAt: entity.createdAt,
     };
   }
@@ -121,11 +166,18 @@ export class ClassQueryService {
     });
 
     return entities.map<Student>((entity) => ({
+      id: entity.id,
       mssv: entity.mssv,
-      name: entity.fullName ?? undefined,
-      photoUrl: this.buildStudentPhotoUrl(entity.mssv, entity.classId),
+      fullName: entity.fullName,
       photoStatus: entity.photoStatus,
       importOrder: entity.importOrder,
+      classCode: entity.classCode,
+      className: entity.className ?? undefined,
+      gender: entity.gender ?? undefined,
+      dob: entity.dob ?? undefined,
+      email: entity.email ?? undefined,
+      notes: entity.notes ?? undefined,
+      photoUrl: this.buildStudentPhotoUrl(entity.mssv, entity.classId),
     }));
   }
 

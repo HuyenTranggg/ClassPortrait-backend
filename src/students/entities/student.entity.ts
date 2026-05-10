@@ -1,4 +1,4 @@
-import { Column, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn, JoinColumn } from 'typeorm';
+import { Column, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn, JoinColumn, Unique } from 'typeorm';
 import { ClassEntity } from '../../classes/entities/class.entity';
 import { AttendanceEntity } from '../../classes/attendance/entities/attendance.entity';
 
@@ -9,6 +9,7 @@ export enum PhotoStatus {
 }
 
 @Entity('students')
+@Unique(['classId', 'mssv', 'classCode'])
 export class StudentEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -26,8 +27,8 @@ export class StudentEntity {
   @Column({ name: 'import_order', type: 'int', default: 0 })
   importOrder!: number;
 
-  @Column({ name: 'full_name', type: 'varchar', length: 255, nullable: true })
-  fullName!: string | null;
+  @Column({ name: 'full_name', type: 'varchar', length: 255 })
+  fullName!: string;
 
   @Column({
     name: 'photo_status',
@@ -38,7 +39,24 @@ export class StudentEntity {
   })
   photoStatus!: PhotoStatus;
 
+  @Column({ name: 'class_code', type: 'varchar', length: 50 })
+  classCode!: string;
+
+  @Column({ name: 'class_name', type: 'varchar', length: 255, nullable: true })
+  className!: string | null;
+
+  @Column({ name: 'gender', type: 'varchar', length: 10, nullable: true })
+  gender!: string | null;
+
+  @Column({ name: 'dob', type: 'date', nullable: true })
+  dob!: Date | null;
+
+  @Column({ name: 'email', type: 'varchar', length: 255, nullable: true })
+  email!: string | null;
+
+  @Column({ name: 'notes', type: 'text', nullable: true })
+  notes!: string | null;
+
   @OneToMany(() => AttendanceEntity, (attendance) => attendance.studentEntity)
   attendances!: AttendanceEntity[];
 }
-

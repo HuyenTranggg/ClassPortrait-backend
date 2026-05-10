@@ -25,17 +25,23 @@ export type ShareLinkView = {
 export type SharedClassView = {
   classInfo: {
     id: string;
-    classCode: string;
-    courseCode?: string;
-    courseName?: string;
-    semester?: string;
-    department?: string;
-    classType?: string;
-    instructor?: string;
+    classExamCode?: string;
+    examDate?: Date;
+    examRoom?: string;
+    examTime?: string;
+    examShift?: string;
+    semester: string;
+    courseCode: string;
+    courseName: string;
+    department: string;
+    instructor: string;
+    importOrder: number;
   };
   students: Array<{
     mssv: string;
-    name?: string;
+    fullName: string;
+    classCode: string; // Mã lớp học của sinh viên
+    className?: string;
     photoUrl: string;
     photoStatus: string;
     importOrder: number;
@@ -308,17 +314,23 @@ export class ClassShareService {
     return {
       classInfo: {
         id: classEntity.id,
-        classCode: classEntity.classCode,
-        courseCode: classEntity.courseCode ?? undefined,
-        courseName: classEntity.courseName ?? undefined,
-        semester: classEntity.semester ?? undefined,
-        department: classEntity.department ?? undefined,
-        classType: classEntity.classType ?? undefined,
-        instructor: classEntity.instructor ?? undefined,
+        classExamCode: classEntity.classExamCode ?? undefined,
+        examDate: classEntity.examDate ?? undefined,
+        examRoom: classEntity.examRoom ?? undefined,
+        examTime: classEntity.examTime ?? undefined,
+        examShift: classEntity.examShift ?? undefined,
+        semester: classEntity.semester,
+        courseCode: classEntity.courseCode,
+        courseName: classEntity.courseName,
+        department: classEntity.department,
+        instructor: classEntity.instructor,
+        importOrder: classEntity.importOrder,
       },
       students: students.map((student) => ({
         mssv: student.mssv,
-        name: student.fullName ?? undefined,
+        fullName: student.fullName,
+        classCode: student.classCode, // Hiển thị mã lớp học của sinh viên
+        className: student.className ?? undefined,
         photoUrl: this.buildStudentPhotoUrl(student.mssv, classEntity.id),
         photoStatus: student.photoStatus,
         importOrder: student.importOrder,
