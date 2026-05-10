@@ -34,8 +34,14 @@ export type TeacherDashboardQueryOptions = {
 
 export type TeacherDashboardClassItem = {
   classId: string;
-  className?: string;
-  classCode: string;
+  className?: string; // courseName
+  classCode: string; // courseCode
+  semester: string;
+  instructor: string;
+  examDate?: Date;
+  examRoom?: string;
+  examTime?: string;
+  examShift?: string;
   studentCount: number;
   validPhotoRate: number;
   presentRate: number | null;
@@ -117,7 +123,18 @@ export class ClassDashboardService {
 
     const classRows = await this.classesRepository.find({
       where: { userId },
-      select: { id: true, classCode: true, courseName: true, createdAt: true },
+      select: {
+        id: true,
+        semester: true,
+        courseCode: true,
+        courseName: true,
+        instructor: true,
+        examDate: true,
+        examRoom: true,
+        examTime: true,
+        examShift: true,
+        createdAt: true,
+      },
       order: { createdAt: 'DESC' },
     });
 
@@ -270,8 +287,14 @@ export class ClassDashboardService {
 
       return {
         classId: item.id,
-        className: item.courseName ?? undefined,
-        classCode: item.classCode,
+        className: item.courseName,
+        classCode: item.courseCode,
+        semester: item.semester,
+        instructor: item.instructor,
+        examDate: item.examDate ?? undefined,
+        examRoom: item.examRoom ?? undefined,
+        examTime: item.examTime ?? undefined,
+        examShift: item.examShift ?? undefined,
         studentCount: studentAgg.totalStudents,
         validPhotoRate: this.toPercent(studentAgg.loadedStudents, studentAgg.totalStudents),
         presentRate,

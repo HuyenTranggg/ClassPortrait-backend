@@ -1,4 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import * as XLSX from 'xlsx';
+import csvParser from 'csv-parser';
+import { Readable } from 'stream';
 import { ParsedImportData } from '../import.types';
 import { SourceType } from '../entities/import-history.entity';
 import { FileImportParserService } from './file-import-parser.service';

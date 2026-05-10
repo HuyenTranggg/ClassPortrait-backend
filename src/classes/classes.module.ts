@@ -1,5 +1,3 @@
-// backend/src/classes/classes.module.ts
-
 import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -18,14 +16,17 @@ import { GoogleSheetParserService } from './import/services/google-sheet-parser.
 import { ImportMappingService } from './import/services/import-mapping.service';
 import { ImportDuplicateService } from './import/services/import-duplicate.service';
 import { ImportHistoryService } from './import/services/import-history.service';
+import { ImportGroupingService } from './import/services/import-grouping.service';
+import { ImportPersistenceService } from './import/services/import-persistence.service';
+import { ClassAttendanceService } from './attendance/attendance.service';
+import { ClassDashboardService } from './dashboard/dashboard.service';
 import { ClassEntity } from './entities/class.entity';
 import { StudentEntity } from '../students/entities/student.entity';
 import { ImportHistoryEntity } from './import/entities/import-history.entity';
+import { ImportHistoryClassEntity } from './import/entities/import-history-class.entity';
 import { ShareLinkEntity } from './share/entities/share-link.entity';
 import { AttendanceEntity } from './attendance/entities/attendance.entity';
 import { ShareLinkSignatureMiddleware } from './share/middlewares/share-link-signature.middleware';
-import { ClassAttendanceService } from './attendance/attendance.service';
-import { ClassDashboardService } from './dashboard/dashboard.service';
 
 @Module({
   imports: [
@@ -34,7 +35,14 @@ import { ClassDashboardService } from './dashboard/dashboard.service';
         fileSize: 10 * 1024 * 1024, // 10MB
       },
     }),
-    TypeOrmModule.forFeature([ClassEntity, StudentEntity, ImportHistoryEntity, ShareLinkEntity, AttendanceEntity]),
+    TypeOrmModule.forFeature([
+      ClassEntity,
+      StudentEntity,
+      ImportHistoryEntity,
+      ImportHistoryClassEntity,
+      ShareLinkEntity,
+      AttendanceEntity,
+    ]),
   ],
   controllers: [
     ClassImportController,
@@ -56,6 +64,8 @@ import { ClassDashboardService } from './dashboard/dashboard.service';
     ImportMappingService,
     ImportDuplicateService,
     ImportHistoryService,
+    ImportGroupingService,
+    ImportPersistenceService,
   ],
   exports: [ClassesService], // Export để có thể dùng trong module khác
 })

@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable, UnprocessableEntityException } from '@nestjs/common';
-import { Student } from '../../../common/types';
-import { ClassImportInfo, ImportClassOptions, ImportExtractedData, ImportMappingMode } from '../import.types';
+import { RawStudentData, ResolvedImportMapping, ParsedImportData } from '../import.types';
 
 @Injectable()
 export class ImportMappingService {
@@ -10,42 +9,12 @@ export class ImportMappingService {
     return value
       .toLowerCase()
       .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[̀-ͯ]/g, '')
       .replace(/[^a-z0-9]/g, '');
-  }
-
-  private cleanCellValue(value: unknown): string {
-    return String(value ?? '').trim();
   }
 
   private isValidMssv(value: string): boolean {
     return ImportMappingService.MSSV_PATTERN.test(value);
-  }
-
-  private getMssvRuleDescription(): string {
-    return 'MSSV phải dài từ 8 đến 10 ký tự và chỉ chứa số 0-9 hoặc ký tự M/P/T (không phân biệt hoa-thường)';
-  }
-
-  private throwInvalidRowsError(invalidRows: Array<{ rowNumber: number; reason: string }>): never {
-    const previewItems = invalidRows.slice(0, 5).map((item) => `dòng ${item.rowNumber} (${item.reason})`);
-    const previewText = previewItems.join(', ');
-    const moreCount = Math.max(0, invalidRows.length - previewItems.length);
-
-    const message =
-      moreCount > 0
-        ? `Phát hiện ${invalidRows.length} dòng dữ liệu không hợp lệ: ${previewText}, và ${moreCount} dòng khác. ${this.getMssvRuleDescription()}.`
-        : `Phát hiện ${invalidRows.length} dòng dữ liệu không hợp lệ: ${previewText}. ${this.getMssvRuleDescription()}.`;
-
-    throw new BadRequestException({
-      code: 'INVALID_IMPORT_DATA',
-      message,
-      invalidRows,
-    });
-  }
-
-  private findHeaderKey(headers: string[], requestedHeader: string): string | undefined {
-    const normalizedRequested = this.normalizeForCompare(requestedHeader);
-    return headers.find((header) => this.normalizeForCompare(header) === normalizedRequested);
   }
 
   private findHeaderByAliases(headers: string[], aliases: string[]): string | undefined {
@@ -64,6 +33,14 @@ export class ImportMappingService {
     return undefined;
   }
 
+  /**
+   * Find header by exact column name (for manual mapping)
+   */
+  findHeaderKey(headers: string[], columnName: string): string | undefined {
+    const normalized = this.normalizeForCompare(columnName);
+    return headers.find((header) => this.normalizeForCompare(header) === normalized);
+  }
+
   private assertInvalidColumnMapping(message: string, status: 'bad-request' | 'unprocessable' = 'unprocessable'): never {
     const payload = {
       code: 'INVALID_COLUMN_MAPPING',
@@ -76,30 +53,33 @@ export class ImportMappingService {
     throw new UnprocessableEntityException(payload);
   }
 
-  extractClassData(
-    rows: Array<Record<string, any> & { __rowNumber: number }>,
-    headers: string[],
-    options: ImportClassOptions,
-  ): ImportExtractedData {
-    const startRow = options.startRow ?? 2;
-    const filteredRows = rows.filter((row) => row.__rowNumber >= startRow);
+  /**
+   * Detect column mapping for all required and optional fields
+   */
+  detectColumnMapping(headers: string[]): ResolvedImportMapping {
+    // Required fields
+    const mssvKey = this.findHeaderByAliases(headers, ['mssv', 'mã số sinh viên', 'ma so sinh vien', 'student id']);
+    const nameKey = this.findHeaderByAliases(headers, [
+      'họ và tên',
+      'họ tên',
+      'ho va ten',
+      'ho ten',
+      'họ và tên sv',
+      'họ và tên sinh viên',
+      'name',
+      'fullname',
+      'full name',
+    ]);
 
-    if (filteredRows.length === 0) {
-      throw new BadRequestException('Không có dữ liệu tại hoặc sau dòng bắt đầu đã chọn');
+    if (!mssvKey || !nameKey) {
+      this.assertInvalidColumnMapping('Không thể tự động nhận diện đầy đủ cột MSSV và Họ và tên');
     }
 
-    const firstRow = filteredRows[0];
+    if (this.normalizeForCompare(mssvKey) === this.normalizeForCompare(nameKey)) {
+      this.assertInvalidColumnMapping('Cột MSSV và cột Họ và tên không được trùng nhau');
+    }
 
-    const classCodeKey = this.findHeaderByAliases(headers, ['mã lớp', 'ma lop', 'class code', 'mã lớp học']);
-    const courseCodeKey = this.findHeaderByAliases(headers, ['mã học phần', 'ma hoc phan', 'course code', 'mã hp']);
-    const courseNameKey = this.findHeaderByAliases(headers, [
-      'tên học phần',
-      'ten hoc phan',
-      'course name',
-      'tên hp',
-      'môn học',
-      'mon hoc',
-    ]);
+    // Optional fields for exam session grouping and student info
     const semesterKey = this.findHeaderByAliases(headers, ['học kỳ', 'hoc ky', 'semester', 'học kì', 'hoc ki']);
     const departmentKey = this.findHeaderByAliases(headers, [
       'đv giảng dạy',
@@ -110,7 +90,23 @@ export class ImportMappingService {
       'khoa',
       'viện',
     ]);
+    const classCodeKey = this.findHeaderByAliases(headers, ['mã lớp', 'ma lop', 'class code', 'mã lớp học']);
+    const courseCodeKey = this.findHeaderByAliases(headers, ['mã học phần', 'ma hoc phan', 'course code', 'mã hp']);
+    const courseNameKey = this.findHeaderByAliases(headers, [
+      'tên học phần',
+      'ten hoc phan',
+      'course name',
+      'tên hp',
+      'môn học',
+      'mon hoc',
+    ]);
     const classTypeKey = this.findHeaderByAliases(headers, ['loại lớp', 'loai lop', 'class type', 'type', 'loại']);
+    const classNameKey = this.findHeaderByAliases(headers, ['tên lớp', 'ten lop', 'class name']);
+    const classExamCodeKey = this.findHeaderByAliases(headers, ['mã lớp thi', 'ma lop thi', 'class exam code', 'exam code']);
+    const examDateKey = this.findHeaderByAliases(headers, ['ngày thi', 'ngay thi', 'exam date', 'date']);
+    const examRoomKey = this.findHeaderByAliases(headers, ['phòng thi', 'phong thi', 'exam room', 'room']);
+    const examTimeKey = this.findHeaderByAliases(headers, ['thời gian thi', 'thoi gian thi', 'exam time', 'time']);
+    const examShiftKey = this.findHeaderByAliases(headers, ['kíp thi', 'kip thi', 'exam shift', 'shift']);
     const instructorKey = this.findHeaderByAliases(headers, [
       'giảng viên',
       'giang vien',
@@ -120,149 +116,248 @@ export class ImportMappingService {
       'giáo viên',
       'giao vien',
     ]);
-
-    const requestedMode: ImportMappingMode = options.mappingMode === 'manual' ? 'manual' : 'auto';
-    const hasManualMapping = Boolean(options.mssvColumn && options.nameColumn);
-
-    let mappingModeUsed: ImportMappingMode;
-    let mssvKey: string | undefined;
-    let nameKey: string | undefined;
-
-    if (requestedMode === 'manual' && hasManualMapping) {
-      const resolvedMssv = this.findHeaderKey(headers, this.cleanCellValue(options.mssvColumn));
-      const resolvedName = this.findHeaderKey(headers, this.cleanCellValue(options.nameColumn));
-
-      if (!resolvedMssv) {
-        this.assertInvalidColumnMapping('Cột MSSV không tồn tại trong file');
-      }
-      if (!resolvedName) {
-        this.assertInvalidColumnMapping('Cột Họ và tên không tồn tại trong file');
-      }
-
-      if (this.normalizeForCompare(resolvedMssv) === this.normalizeForCompare(resolvedName)) {
-        this.assertInvalidColumnMapping('Cột MSSV và cột Họ và tên không được trùng nhau');
-      }
-
-      mappingModeUsed = 'manual';
-      mssvKey = resolvedMssv;
-      nameKey = resolvedName;
-    } else {
-      mssvKey = this.findHeaderByAliases(headers, ['mssv', 'mã số sinh viên', 'ma so sinh vien', 'student id']);
-      nameKey = this.findHeaderByAliases(headers, [
-        'họ và tên',
-        'họ tên',
-        'ho va ten',
-        'ho ten',
-        'họ và tên sv',
-        'họ và tên sinh viên',
-        'name',
-        'fullname',
-        'full name',
-      ]);
-
-      if (!mssvKey || !nameKey) {
-        this.assertInvalidColumnMapping('Không thể tự động nhận diện đầy đủ cột MSSV và Họ và tên');
-      }
-
-      if (this.normalizeForCompare(mssvKey) === this.normalizeForCompare(nameKey)) {
-        this.assertInvalidColumnMapping('Cột MSSV và cột Họ và tên không được trùng nhau');
-      }
-
-      mappingModeUsed = 'auto';
-    }
-
-    const classCode = classCodeKey ? this.cleanCellValue(firstRow[classCodeKey]) : '';
-    if (!classCode) {
-      throw new BadRequestException(
-        'Không tìm thấy cột Mã lớp trong file. Vui lòng đảm bảo có cột tên "Mã lớp", "ma lop" hoặc "class code"',
-      );
-    }
-
-    const classInfo: ClassImportInfo = {
-      classCode,
-      courseCode: courseCodeKey ? this.cleanCellValue(firstRow[courseCodeKey]) || undefined : undefined,
-      courseName: courseNameKey ? this.cleanCellValue(firstRow[courseNameKey]) || undefined : undefined,
-      semester: semesterKey ? this.cleanCellValue(firstRow[semesterKey]) || undefined : undefined,
-      department: departmentKey ? this.cleanCellValue(firstRow[departmentKey]) || undefined : undefined,
-      classType: classTypeKey ? this.cleanCellValue(firstRow[classTypeKey]) || undefined : undefined,
-      instructor: instructorKey ? this.cleanCellValue(firstRow[instructorKey]) || undefined : undefined,
-    };
-
-    const seenMssv = new Set<string>();
-    const students: Student[] = [];
-    let skippedRows = 0;
-    const invalidRows: Array<{ rowNumber: number; reason: string }> = [];
-
-    filteredRows.forEach((row) => {
-      const mssv = this.cleanCellValue(row[mssvKey]);
-      const name = this.cleanCellValue(row[nameKey]);
-
-      if (!mssv && !name) {
-        skippedRows += 1;
-        return;
-      }
-
-      if (!mssv) {
-        skippedRows += 1;
-        invalidRows.push({
-          rowNumber: row.__rowNumber,
-          reason: 'Thiếu MSSV',
-        });
-        return;
-      }
-
-      if (!this.isValidMssv(mssv)) {
-        skippedRows += 1;
-        invalidRows.push({
-          rowNumber: row.__rowNumber,
-          reason: `MSSV "${mssv}" không đúng định dạng`,
-        });
-        return;
-      }
-
-      if (seenMssv.has(mssv)) {
-        skippedRows += 1;
-        invalidRows.push({
-          rowNumber: row.__rowNumber,
-          reason: `MSSV "${mssv}" bị trùng trong file import`,
-        });
-        return;
-      }
-
-      seenMssv.add(mssv);
-
-      const student: Student = { mssv };
-      if (name) {
-        student.name = name;
-      }
-      students.push(student);
-    });
-
-    const totalRowsRead = filteredRows.length;
-    const importedRows = students.length;
-
-    if (invalidRows.length > 0) {
-      this.throwInvalidRowsError(invalidRows);
-    }
-
-    if (importedRows === 0) {
-      throw new BadRequestException('Không tìm thấy sinh viên hợp lệ sau khi áp dụng mapping cột');
-    }
+    const notesKey = this.findHeaderByAliases(headers, ['ghi chú', 'ghi chu', 'notes', 'note']);
+    const genderKey = this.findHeaderByAliases(headers, ['giới tính', 'gioi tinh', 'gender']);
+    const dobKey = this.findHeaderByAliases(headers, ['ngày sinh', 'ngay sinh', 'date of birth', 'dob']);
+    const emailKey = this.findHeaderByAliases(headers, ['email', 'thư điện tử', 'thu dien tu']);
 
     return {
-      classInfo,
-      students,
-      mappingModeUsed,
-      resolvedMapping: {
-        mssvColumn: mssvKey,
-        nameColumn: nameKey,
-        startRow,
-      },
-      stats: {
-        totalRowsRead,
-        skippedRows,
-        importedRows,
-      },
+      mssvColumn: mssvKey,
+      nameColumn: nameKey,
+      startRow: 2, // default
+      // Optional columns
+      semesterColumn: semesterKey,
+      departmentColumn: departmentKey,
+      classCodeColumn: classCodeKey,
+      courseCodeColumn: courseCodeKey,
+      courseNameColumn: courseNameKey,
+      classTypeColumn: classTypeKey,
+      classNameColumn: classNameKey,
+      classExamCodeColumn: classExamCodeKey,
+      examDateColumn: examDateKey,
+      examRoomColumn: examRoomKey,
+      examTimeColumn: examTimeKey,
+      examShiftColumn: examShiftKey,
+      instructorColumn: instructorKey,
+      notesColumn: notesKey,
+      genderColumn: genderKey,
+      dobColumn: dobKey,
+      emailColumn: emailKey,
     };
+  }
+
+  /**
+   * Extract raw student data from rows using mapping
+   */
+  extractRawStudentData(
+    parsedData: ParsedImportData,
+    mapping: ResolvedImportMapping,
+  ): RawStudentData[] {
+    const { rows } = parsedData;
+    const rawStudents: RawStudentData[] = [];
+
+    for (const row of rows) {
+      const rowNumber = row.__rowNumber;
+
+      const getValue = (column?: string): string => {
+        if (!column) return '';
+        const val = row[column];
+        return val !== undefined && val !== null ? String(val).trim() : '';
+      };
+
+      const getOptionalValue = (column?: string): string | undefined => {
+        if (!column) return undefined;
+        const val = row[column];
+        return val !== undefined && val !== null ? String(val).trim() : undefined;
+      };
+
+      const getDateValue = (column?: string): Date | undefined => {
+        const val = getOptionalValue(column);
+        if (!val) return undefined;
+        const parsed = this.parseDate(val);
+        if (!parsed) {
+          throw new BadRequestException({
+            code: 'INVALID_IMPORT_DATA',
+            message: `Dữ liệu ngày không hợp lệ tại dòng ${rowNumber}${column ? ` (cột "${column}")` : ''}`,
+            invalidRows: [{ rowNumber, reason: `Giá trị ngày "${val}" không hợp lệ` }],
+          });
+        }
+        return parsed;
+      };
+
+      const mssv = getValue(mapping.mssvColumn);
+      const fullName = getValue(mapping.nameColumn);
+
+      // Skip row if missing required fields (but don't throw error yet - let caller handle)
+      if (!mssv || !fullName) {
+        continue;
+      }
+
+      const rawStudent: RawStudentData = {
+        semester: getValue(mapping.semesterColumn) || '',
+        department: getValue(mapping.departmentColumn) || '',
+        classCode: getValue(mapping.classCodeColumn) || '',
+        classType: getOptionalValue(mapping.classTypeColumn), // ignored but kept for completeness
+        courseCode: getValue(mapping.courseCodeColumn) || '',
+        courseName: getValue(mapping.courseNameColumn) || '',
+        mssv,
+        fullName,
+        gender: getOptionalValue(mapping.genderColumn),
+        dob: getDateValue(mapping.dobColumn),
+        email: getOptionalValue(mapping.emailColumn),
+        className: getOptionalValue(mapping.classNameColumn),
+        classExamCode: getOptionalValue(mapping.classExamCodeColumn),
+        notes: getOptionalValue(mapping.notesColumn),
+        examDate: getDateValue(mapping.examDateColumn),
+        examRoom: getOptionalValue(mapping.examRoomColumn),
+        examTime: getOptionalValue(mapping.examTimeColumn),
+        examShift: getOptionalValue(mapping.examShiftColumn),
+        instructor: getValue(mapping.instructorColumn) || '',
+        importOrder: rowNumber,
+      };
+
+      rawStudents.push(rawStudent);
+    }
+
+    return rawStudents;
+  }
+
+  /**
+   * Validate raw student data and return any errors
+   */
+  validateRawStudentData(students: RawStudentData[]): Array<{ rowNumber: number; reason: string }> {
+    const errors: Array<{ rowNumber: number; reason: string }> = [];
+    const seenMssv = new Set<string>();
+
+    for (const student of students) {
+      // Required fields check
+      if (!student.semester) {
+        errors.push({
+          rowNumber: student.importOrder,
+          reason: 'Thiếu Học kỳ',
+        });
+        continue;
+      }
+
+      if (!student.department) {
+        errors.push({
+          rowNumber: student.importOrder,
+          reason: 'Thiếu Đơn vị giảng dạy',
+        });
+        continue;
+      }
+
+      if (!student.classCode) {
+        errors.push({
+          rowNumber: student.importOrder,
+          reason: 'Thiếu Mã lớp',
+        });
+        continue;
+      }
+
+      if (!student.courseCode) {
+        errors.push({
+          rowNumber: student.importOrder,
+          reason: 'Thiếu Mã học phần',
+        });
+        continue;
+      }
+
+      if (!student.courseName) {
+        errors.push({
+          rowNumber: student.importOrder,
+          reason: 'Thiếu Tên học phần',
+        });
+        continue;
+      }
+
+      if (!student.instructor) {
+        errors.push({
+          rowNumber: student.importOrder,
+          reason: 'Thiếu Giảng viên',
+        });
+        continue;
+      }
+
+      if (!this.isValidMssv(student.mssv)) {
+        errors.push({
+          rowNumber: student.importOrder,
+          reason: `MSSV "${student.mssv}" không đúng định dạng`,
+        });
+        continue;
+      }
+
+      if (seenMssv.has(student.mssv)) {
+        errors.push({
+          rowNumber: student.importOrder,
+          reason: `MSSV "${student.mssv}" bị trùng trong file import`,
+        });
+        continue;
+      }
+
+      seenMssv.add(student.mssv);
+    }
+
+    return errors;
+  }
+
+  /**
+   * Parse date from various formats: string (YYYY-MM-DD, DD/MM/YYYY), Excel serial number.
+   * Trả về undefined nếu không parse được để tránh fallback sang ngày hiện tại gây sai lệch dữ liệu.
+   */
+  private parseDate(value: string): Date | undefined {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+
+    // Try ISO format (YYYY-MM-DD)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      const [year, month, day] = trimmed.split('-').map(Number);
+      return this.buildUtcDate(year, month, day);
+    }
+
+    // Try DD/MM/YYYY
+    if (/^\d{1,2}[/-]\d{1,2}[/-]\d{4}$/.test(trimmed)) {
+      const [d, m, y] = trimmed.split(/[-\/]/).map(Number);
+      const date = this.buildUtcDate(y, m, d);
+      if (date) return date;
+    }
+
+    // Try Excel serial date (days since 1899-12-30, including fractional time)
+    const serial = Number(trimmed);
+    if (Number.isFinite(serial) && serial > 0 && serial < 2958465) {
+      const wholeDays = Math.floor(serial);
+      const dayFraction = serial - wholeDays;
+      const ms = Math.round(dayFraction * 24 * 60 * 60 * 1000);
+      const excelEpoch = Date.UTC(1899, 11, 30);
+      const date = new Date(excelEpoch + wholeDays * 24 * 60 * 60 * 1000 + ms);
+      if (!Number.isNaN(date.getTime())) return date;
+    }
+
+    // Try full datetime strings as final fallback (e.g. ISO with time component)
+    const timestamp = Date.parse(trimmed);
+    if (!Number.isNaN(timestamp)) {
+      return new Date(timestamp);
+    }
+
+    return undefined;
+  }
+
+  private buildUtcDate(year: number, month: number, day: number): Date | undefined {
+    if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+      return undefined;
+    }
+    if (month < 1 || month > 12 || day < 1 || day > 31) {
+      return undefined;
+    }
+
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month - 1 ||
+      date.getUTCDate() !== day
+    ) {
+      return undefined;
+    }
+    return date;
   }
 }

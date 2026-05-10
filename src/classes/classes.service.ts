@@ -7,6 +7,7 @@ import {
   ImportClassOptions,
   ImportClassResult,
   ImportHistoryListResult,
+  ImportPreviewResult,
 } from './import/import.types';
 import { ImportHistoryService } from './import/services/import-history.service';
 import { ClassQueryService } from './class-query.service';
@@ -38,8 +39,13 @@ export class ClassesService {
     return this.importHistoryService.getImportHistoryByUser(userId, options);
   }
 
-  async findAll(): Promise<Class[]> {
-    return this.classQueryService.findAll();
+  async deleteImportHistory(id: string, userId: string): Promise<void> {
+    return this.importHistoryService.delete(id, userId);
+  }
+
+
+  async findAll(userId: string): Promise<Class[]> {
+    return this.classQueryService.findAll(userId);
   }
 
   async findAllWithStudentCount(userId: string): Promise<Array<Class & { studentCount: number }>> {
@@ -77,6 +83,23 @@ export class ClassesService {
   ): Promise<ImportClassResult> {
     return this.classImportService.importFromGoogleSheet(googleSheetUrl, userId, options);
   }
+
+  async previewImport(
+    file: Express.Multer.File,
+    userId: string,
+    options?: ImportClassOptions,
+  ): Promise<ImportPreviewResult> {
+    return this.classImportService.previewImport(file, userId, options);
+  }
+
+  async previewImportFromGoogleSheet(
+    googleSheetUrl: string,
+    userId: string,
+    options?: ImportClassOptions,
+  ): Promise<ImportPreviewResult> {
+    return this.classImportService.previewImportFromGoogleSheet(googleSheetUrl, userId, options);
+  }
+
 
   /**
    * Tạo link chia sẻ cho lớp học.

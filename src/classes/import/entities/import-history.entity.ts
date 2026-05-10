@@ -2,11 +2,10 @@ import {
   Column,
   CreateDateColumn,
   Entity,
-  JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
+  JoinColumn,
 } from 'typeorm';
-import { ClassEntity } from '../../entities/class.entity';
 import { UserEntity } from '../../../auth/entities/user.entity';
 
 export enum SourceType {
@@ -40,14 +39,7 @@ export class ImportHistoryEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @ManyToOne(() => ClassEntity, (cls) => cls.importHistories, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'class_id' })
-  classEntity!: ClassEntity;
-
-  @Column({ name: 'class_id', type: 'uuid' })
-  classId!: string;
-
-  @ManyToOne(() => UserEntity, (user) => user.importHistories, { onDelete: 'CASCADE' })
+  @ManyToOne(() => UserEntity, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
   user!: UserEntity;
 
@@ -81,12 +73,14 @@ export class ImportHistoryEntity {
   totalCount!: number;
 
   @Column({ name: 'column_mapping', type: 'jsonb', nullable: true })
-  columnMapping!: Record<string, any> | null;
+  columnMapping!: Record<string, unknown> | null;
 
   @Column({ name: 'changes_summary', type: 'jsonb', nullable: true })
   changesSummary!: ImportChangesSummary | null;
 
+  @Column({ name: 'class_ids', type: 'jsonb', nullable: true })
+  classIds!: string[] | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
   createdAt!: Date;
 }
-

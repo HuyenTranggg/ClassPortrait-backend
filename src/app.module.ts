@@ -12,6 +12,7 @@ import { UserEntity } from './auth/entities/user.entity';
 import { ClassEntity } from './classes/entities/class.entity';
 import { StudentEntity } from './students/entities/student.entity';
 import { ImportHistoryEntity } from './classes/import/entities/import-history.entity';
+import { ImportHistoryClassEntity } from './classes/import/entities/import-history-class.entity';
 import { ShareLinkEntity } from './classes/share/entities/share-link.entity';
 import { AttendanceEntity } from './classes/attendance/entities/attendance.entity';
 
@@ -29,7 +30,7 @@ import { AttendanceEntity } from './classes/attendance/entities/attendance.entit
         username: configService.get<string>('DB_USER', 'postgres'),
         password: configService.get<string>('DB_PASSWORD', ''),
         database: configService.get<string>('DB_NAME', 'classportrait'),
-        entities: [UserEntity, ClassEntity, StudentEntity, ImportHistoryEntity, ShareLinkEntity, AttendanceEntity],
+        entities: [UserEntity, ClassEntity, StudentEntity, ImportHistoryEntity, ImportHistoryClassEntity, ShareLinkEntity, AttendanceEntity],
         synchronize: false,
       }),
     }),
