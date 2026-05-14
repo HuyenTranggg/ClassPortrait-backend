@@ -6,84 +6,144 @@ import { ClassEntity } from '../entities/class.entity';
 import { ShareLinkEntity } from '../share/entities/share-link.entity';
 import { PhotoStatus, StudentEntity } from '../../students/entities/student.entity';
 import { AttendanceEntity } from '../attendance/entities/attendance.entity';
-import { applyFilter, applyPagination, applySort, normalizeQueryOptions } from './utils/dashboard.util';
 
-export type DashboardAttendanceStatusFilter = 'no_data' | 'available';
-export type DashboardShareLinkStatusFilter = 'no_link' | 'active' | 'inactive' | 'expired';
-export type DashboardSortBy =
-  | 'className'
-  | 'classCode'
-  | 'studentCount'
-  | 'validPhotoRate'
-  | 'presentRate'
-  | 'absentCount'
-  | 'shareLinkStatus'
-  | 'remainingDays';
-export type DashboardSortOrder = 'asc' | 'desc';
+// ─────────────────────────────────────────────
+// FILTER OPTIONS
+// ─────────────────────────────────────────────
 
-export type TeacherDashboardQueryOptions = {
+export interface DashboardFilterOptions {
+  semester?: string;
+  startDate?: string; // 'YYYY-MM-DD'
+  endDate?: string;   // 'YYYY-MM-DD'
+  upcomingDays?: number;
   expiringSoonDays?: number;
-  page?: number;
-  limit?: number;
-  search?: string;
-  attendanceStatus?: DashboardAttendanceStatusFilter;
-  shareLinkStatus?: DashboardShareLinkStatusFilter;
-  sortBy?: DashboardSortBy;
-  sortOrder?: DashboardSortOrder;
+}
+
+// ─────────────────────────────────────────────
+// RETURN TYPES
+// ─────────────────────────────────────────────
+
+/** Tổng quan nhanh toàn hệ thống */
+export type DashboardOverviewSummary = {
+  totalClasses: number;
+  totalStudents: number;
+  totalDistinctCourses: number;
+  totalDistinctRooms: number;
+  totalDistinctShifts: number;
+  classesWithExamToday: number;
+  classesWithExamThisWeek: number;
 };
 
-export type TeacherDashboardClassItem = {
+/** Tình trạng ảnh sinh viên toàn hệ thống */
+export type DashboardPhotoHealth = {
+  validPhotoRate: number;
+  loadedCount: number;
+  pendingCount: number;
+  notFoundCount: number;
+  classesWithIncompletePhoto: number;
+};
+
+/** Một lớp sắp thi, dùng cho Timeline */
+export type UpcomingExamItem = {
   classId: string;
-  className?: string; // courseName
-  classCode: string; // courseCode
-  semester: string;
-  instructor: string;
-  examDate?: Date;
-  examRoom?: string;
-  examTime?: string;
-  examShift?: string;
+  courseCode: string;
+  courseName: string;
+  examDate: string;
+  examRoom: string | null;
+  examTime: string | null;
+  examShift: string | null;
   studentCount: number;
   validPhotoRate: number;
-  presentRate: number | null;
+  presentCount: number | null;
   absentCount: number | null;
-  attendanceStatus: 'no_data' | 'available';
-  shareLink: {
-    status: 'no_link' | 'active' | 'inactive' | 'expired';
-    isActive: boolean;
-    isExpired: boolean;
-    requireLogin: boolean;
-    expiresAt: Date | null;
-    remainingDays: number | null;
-  };
+  attendanceRate: number | null;
 };
 
-export type TeacherDashboardOverview = {
-  summary: {
-    classCount: number;
-    studentCount: number;
-    validPhotoRate: number;
-    expiringSoonLinkCount: number;
-    activeLinkCount: number;
-    inactiveLinkCount: number;
-    expiredLinkCount: number;
-  };
-  classes: TeacherDashboardClassItem[];
-  pagination: {
-    page: number;
-    limit: number;
-    totalItems: number;
-    totalPages: number;
-  };
-  filters: {
-    expiringSoonDays: number;
-    search?: string;
-    attendanceStatus?: DashboardAttendanceStatusFilter;
-    shareLinkStatus?: DashboardShareLinkStatusFilter;
-    sortBy: DashboardSortBy;
-    sortOrder: DashboardSortOrder;
-  };
+/** Thống kê theo phòng thi */
+export type RoomStat = {
+  examRoom: string;
+  classCount: number;
+  studentCount: number;
+};
+
+/** Thống kê theo ca/giờ thi */
+export type ShiftStat = {
+  examShift: string;
+  examTime: string | null;
+  classCount: number;
+  studentCount: number;
+};
+
+/** Thống kê theo học phần */
+export type CourseStat = {
+  courseCode: string;
+  courseName: string;
+  classCount: number;
+  studentCount: number;
+};
+
+/** Thống kê logistics hậu cần thi cử */
+export type DashboardLogistics = {
+  byRoom: RoomStat[];
+  byShift: ShiftStat[];
+  byCourse: CourseStat[];
+};
+
+/**
+ * Thống kê tổng quan điểm danh.
+ * - classesWithAttendance: số lớp đã điểm danh (có ít nhất 1 bản ghi attendance)
+ * - classesWithoutAttendance: số lớp chưa điểm danh
+ * - totalStudents: tổng sinh viên trong tất cả lớp thuộc bộ lọc
+ * - totalNotMarked: tổng sinh viên thuộc các lớp CHƯA điểm danh
+ * - totalPresent: tổng lượt có mặt (trong các lớp đã điểm danh)
+ * - totalAbsent: tổng lượt vắng mặt (trong các lớp đã điểm danh)
+ * - globalPresentRate: tỷ lệ có mặt toàn kỳ (trong các lớp đã điểm danh)
+ */
+export type DashboardAttendance = {
+  classesWithAttendance: number;
+  classesWithoutAttendance: number;
+  totalStudents: number;
+  totalNotMarked: number;
+  totalPresent: number;
+  totalAbsent: number;
+  globalPresentRate: number | null;
+};
+
+/**
+ * Thống kê link chia sẻ.
+ * - activeCount: link đang hoạt động (is_active=true, chưa hết hạn)
+ * - publicActiveCount: link hoạt động không yêu cầu đăng nhập
+ * - privateActiveCount: link hoạt động yêu cầu đăng nhập
+ * - expiringSoon24hCount: link sẽ hết hạn trong 24h tới
+ * - expiredOrInactiveCount: link đã hết hạn hoặc đã tắt
+ * - expiredCount: link đã hết hạn
+ * - inactiveCount: link đã tắt thủ công
+ */
+export type DashboardShareLinks = {
+  totalLinks: number;
+  activeCount: number;
+  publicActiveCount: number;
+  privateActiveCount: number;
+  expiringSoon24hCount: number;
+  expiredCount: number;
+  inactiveCount: number;
+  expiredOrInactiveCount: number;
+};
+
+/** Response DTO tổng hợp trả về cho Frontend */
+export type ExamCommandCenterResponse = {
+  overview: DashboardOverviewSummary;
+  photoHealth: DashboardPhotoHealth;
+  allExams: UpcomingExamItem[];
+  logistics: DashboardLogistics;
+  attendance: DashboardAttendance;
+  shareLinks: DashboardShareLinks;
   generatedAt: string;
 };
+
+// ─────────────────────────────────────────────
+// SERVICE
+// ─────────────────────────────────────────────
 
 @Injectable()
 export class ClassDashboardService {
@@ -99,10 +159,10 @@ export class ClassDashboardService {
   ) {}
 
   /**
-   * Chuẩn hóa tỷ lệ phần trăm về 2 chữ số thập phân.
+   * Tính tỷ lệ phần trăm, làm tròn 2 chữ số thập phân.
    * @param value Giá trị đạt được.
    * @param total Tổng mẫu số.
-   * @returns Tỷ lệ phần trăm trong khoảng 0..100.
+   * @returns Tỷ lệ phần trăm trong khoảng 0–100.
    */
   private toPercent(value: number, total: number): number {
     if (total <= 0) return 0;
@@ -110,237 +170,427 @@ export class ClassDashboardService {
   }
 
   /**
-   * Lấy dữ liệu dashboard cho giáo viên, gồm summary tổng thể và bảng lớp có filter/sort/pagination.
-   * @param userId ID giáo viên hiện tại.
-   * @param queryOptions Bộ query options cho bảng lớp.
-   * @returns Snapshot dashboard đã tổng hợp.
+   * Lấy ngày đầu và cuối của tuần hiện tại (Thứ 2 → Chủ nhật).
+   * @param now Thời điểm hiện tại (ms).
+   * @returns Object chứa startOfWeek và endOfWeek.
    */
-  async getTeacherOverview(userId: string, queryOptions?: TeacherDashboardQueryOptions): Promise<TeacherDashboardOverview> {
-    const options = normalizeQueryOptions(queryOptions);
-    const dayMs = 24 * 60 * 60 * 1000;
+  private getWeekBoundaries(now: number): { startOfWeek: Date; endOfWeek: Date } {
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    const dayOfWeek = today.getDay(); // 0=CN, 1=T2...
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() + diffToMonday);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+    return { startOfWeek, endOfWeek };
+  }
+
+  /**
+   * Lấy danh sách học kỳ khả dụng của user (dùng cho dropdown bộ lọc).
+   * @param userId ID giảng viên hiện tại.
+   * @returns Mảng chuỗi học kỳ, đã sắp xếp giảm dần.
+   */
+  async getAvailableSemesters(userId: string): Promise<string[]> {
+    const rows = await this.classesRepository
+      .createQueryBuilder('cls')
+      .select('DISTINCT cls.semester', 'semester')
+      .where('cls.userId = :userId', { userId })
+      .orderBy('cls.semester', 'DESC')
+      .getRawMany<{ semester: string }>();
+    return rows.map((r) => r.semester);
+  }
+
+  /**
+   * Lấy toàn bộ dữ liệu dashboard Exam Command Center cho giảng viên.
+   * Hỗ trợ lọc theo học kỳ và khoảng thời gian thi (examDate).
+   * @param userId ID giảng viên hiện tại.
+   * @param options Các tùy chọn lọc và hiển thị.
+   * @returns Snapshot dashboard tổng hợp theo thiết kế Exam Command Center.
+   */
+  async getExamCommandCenter(
+    userId: string,
+    options: DashboardFilterOptions = {},
+  ): Promise<ExamCommandCenterResponse> {
+    const {
+      semester,
+      startDate,
+      endDate,
+      expiringSoonDays = 3,
+    } = options;
+
     const now = Date.now();
-    const expiringThreshold = now + options.expiringSoonDays * dayMs;
+    const dayMs = 24 * 60 * 60 * 1000;
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(today);
+    todayEnd.setHours(23, 59, 59, 999);
+    const { startOfWeek, endOfWeek } = this.getWeekBoundaries(now);
+    const expiringThreshold = new Date(now + expiringSoonDays * dayMs);
+    const expiring24hThreshold = new Date(now + dayMs);
 
-    const classRows = await this.classesRepository.find({
-      where: { userId },
-      select: {
-        id: true,
-        semester: true,
-        courseCode: true,
-        courseName: true,
-        instructor: true,
-        examDate: true,
-        examRoom: true,
-        examTime: true,
-        examShift: true,
-        createdAt: true,
-      },
-      order: { createdAt: 'DESC' },
-    });
+    // ── 1. Lấy tất cả lớp của user để làm All Exams (chỉ lọc theo semester nếu có) ──
+    const allExamsQb = this.classesRepository
+      .createQueryBuilder('cls')
+      .select([
+        'cls.id',
+        'cls.courseCode',
+        'cls.courseName',
+        'cls.semester',
+        'cls.examDate',
+        'cls.examRoom',
+        'cls.examTime',
+        'cls.examShift',
+      ])
+      .where('cls.userId = :userId', { userId })
+      .orderBy('cls.examDate', 'ASC');
 
-    if (classRows.length === 0) {
-      return {
-        summary: {
-          classCount: 0,
-          studentCount: 0,
-          validPhotoRate: 0,
-          expiringSoonLinkCount: 0,
-          activeLinkCount: 0,
-          inactiveLinkCount: 0,
-          expiredLinkCount: 0,
-        },
-        classes: [],
-        pagination: {
-          page: options.page,
-          limit: options.limit,
-          totalItems: 0,
-          totalPages: 0,
-        },
-        filters: {
-          expiringSoonDays: options.expiringSoonDays,
-          search: options.search,
-          attendanceStatus: options.attendanceStatus,
-          shareLinkStatus: options.shareLinkStatus,
-          sortBy: options.sortBy,
-          sortOrder: options.sortOrder,
-        },
-        generatedAt: new Date().toISOString(),
-      };
+    const allExamsRows = await allExamsQb.getMany();
+
+    if (allExamsRows.length === 0) {
+      return this.buildEmptyResponse();
     }
 
-    const classIds = classRows.map((item) => item.id);
+    const allExamsIds = allExamsRows.map((c) => c.id);
 
+    const summaryRows = allExamsRows.filter(cls => {
+      if (!cls.examDate) return false;
+      
+      const examDateStr = cls.examDate instanceof Date 
+        ? cls.examDate.toISOString().split('T')[0]
+        : String(cls.examDate).split(' ')[0];
+
+      if (startDate && examDateStr < startDate) return false;
+      if (endDate && examDateStr > endDate) return false;
+      return true;
+    });
+
+    const summaryIds = summaryRows.map(c => c.id);
+
+    // ── 2. Aggregate sinh viên theo lớp (cho toàn bộ lớp để support allExams) ──
     const studentAggRows = await this.studentsRepository
       .createQueryBuilder('student')
       .select('student.classId', 'classId')
-      .addSelect('COUNT(student.id)', 'totalStudents')
+      .addSelect('COUNT(student.id)', 'total')
       .addSelect(
-        'SUM(CASE WHEN student.photoStatus = :loadedStatus THEN 1 ELSE 0 END)',
-        'loadedStudents',
+        `SUM(CASE WHEN student.photoStatus = :loaded THEN 1 ELSE 0 END)`,
+        'loaded',
       )
-      .where('student.classId IN (:...classIds)', { classIds })
-      .setParameter('loadedStatus', PhotoStatus.LOADED)
+      .addSelect(
+        `SUM(CASE WHEN student.photoStatus = :pending THEN 1 ELSE 0 END)`,
+        'pending',
+      )
+      .addSelect(
+        `SUM(CASE WHEN student.photoStatus = :notFound THEN 1 ELSE 0 END)`,
+        'notFound',
+      )
+      .where('student.classId IN (:...classIds)', { classIds: allExamsIds })
+      .setParameters({
+        loaded: PhotoStatus.LOADED,
+        pending: PhotoStatus.PENDING,
+        notFound: PhotoStatus.NOT_FOUND,
+      })
       .groupBy('student.classId')
-      .getRawMany<{ classId: string; totalStudents: string; loadedStudents: string }>();
+      .getRawMany<{
+        classId: string;
+        total: string;
+        loaded: string;
+        pending: string;
+        notFound: string;
+      }>();
 
+    // ── 2b. Tính tổng sinh viên duy nhất (theo summaryIds) ───
+    let totalUniqueStudents = 0;
+    if (summaryIds.length > 0) {
+      const totalUniqueStudentsRow = await this.studentsRepository
+        .createQueryBuilder('student')
+        .select('COUNT(DISTINCT student.mssv)', 'count')
+        .where('student.classId IN (:...classIds)', { classIds: summaryIds })
+        .getRawOne<{ count: string }>();
+      totalUniqueStudents = Number(totalUniqueStudentsRow?.count ?? 0);
+    }
+
+    // ── 3. Aggregate điểm danh theo lớp (cho toàn bộ để support allExams) ──
     const attendanceAggRows = await this.attendanceRepository
-      .createQueryBuilder('attendance')
-      .select('attendance.classId', 'classId')
-      .addSelect('COUNT(attendance.id)', 'attendanceRows')
+      .createQueryBuilder('att')
+      .select('att.classId', 'classId')
+      .addSelect('COUNT(att.id)', 'totalRows')
       .addSelect(
-        'SUM(CASE WHEN attendance.status = :presentStatus THEN 1 ELSE 0 END)',
-        'presentStudents',
+        `SUM(CASE WHEN att.status = :present THEN 1 ELSE 0 END)`,
+        'presentCount',
       )
-      .where('attendance.classId IN (:...classIds)', { classIds })
-      .setParameter('presentStatus', AttendanceStatus.PRESENT)
-      .groupBy('attendance.classId')
-      .getRawMany<{ classId: string; attendanceRows: string; presentStudents: string }>();
+      .where('att.classId IN (:...classIds)', { classIds: allExamsIds })
+      .setParameter('present', AttendanceStatus.PRESENT)
+      .groupBy('att.classId')
+      .getRawMany<{ classId: string; totalRows: string; presentCount: string }>();
 
-    const shareLinks = await this.shareLinksRepository.find({
-      where: { classId: In(classIds) },
-      select: {
-        id: true,
-        classId: true,
-        isActive: true,
-        expiresAt: true,
-      },
-    });
+    // ── 4. Share links (theo summaryIds) ──────────────────────────────────
+    const shareLinks = summaryIds.length > 0 ? await this.shareLinksRepository.find({
+      where: { classId: In(summaryIds) },
+      select: { id: true, classId: true, isActive: true, expiresAt: true, requireLogin: true },
+    }) : [];
 
-    const studentAggMap = new Map(
-      studentAggRows.map((row) => [
-        row.classId,
+    // ── 5. Build lookup maps ───────────────────────────────────────────
+    const studentMap = new Map(
+      studentAggRows.map((r) => [
+        r.classId,
         {
-          totalStudents: Number(row.totalStudents ?? 0),
-          loadedStudents: Number(row.loadedStudents ?? 0),
+          total: Number(r.total ?? 0),
+          loaded: Number(r.loaded ?? 0),
+          pending: Number(r.pending ?? 0),
+          notFound: Number(r.notFound ?? 0),
         },
       ]),
     );
 
-    const attendanceAggMap = new Map(
-      attendanceAggRows.map((row) => [
-        row.classId,
+    const attendanceMap = new Map(
+      attendanceAggRows.map((r) => [
+        r.classId,
         {
-          attendanceRows: Number(row.attendanceRows ?? 0),
-          presentStudents: Number(row.presentStudents ?? 0),
+          totalRows: Number(r.totalRows ?? 0),
+          presentCount: Number(r.presentCount ?? 0),
         },
       ]),
     );
 
-    const shareLinkMap = new Map(shareLinks.map((item) => [item.classId, item]));
-
+    // ── 6. Tổng hợp dữ liệu Summary (từ summaryRows) ──────────────────
     let totalStudents = 0;
-    let totalLoadedStudents = 0;
-    let expiringSoonLinkCount = 0;
-    let activeLinkCount = 0;
-    let inactiveLinkCount = 0;
-    let expiredLinkCount = 0;
+    let totalLoaded = 0;
+    let totalPending = 0;
+    let totalNotFound = 0;
+    let classesWithIncompletePhoto = 0;
+    let classesWithExamToday = 0;
+    let classesWithExamThisWeek = 0;
 
-    const allClasses: TeacherDashboardClassItem[] = classRows.map((item) => {
-      const studentAgg = studentAggMap.get(item.id) ?? { totalStudents: 0, loadedStudents: 0 };
-      const attendanceAgg = attendanceAggMap.get(item.id) ?? { attendanceRows: 0, presentStudents: 0 };
-      const shareLink = shareLinkMap.get(item.id);
+    const roomMap = new Map<string, { classCount: number; studentCount: number }>();
+    const shiftMap = new Map<string, { examTime: string | null; classCount: number; studentCount: number }>();
+    const courseMap = new Map<string, { courseName: string; classCount: number; studentCount: number }>();
 
-      totalStudents += studentAgg.totalStudents;
-      totalLoadedStudents += studentAgg.loadedStudents;
+    let globalPresent = 0;
+    let globalAbsent = 0;
+    let classesWithAttendance = 0;
+    let totalStudentsInUnmarkedClasses = 0;
 
-      const hasAttendanceData = attendanceAgg.attendanceRows > 0;
-      const presentRate = hasAttendanceData
-        ? this.toPercent(attendanceAgg.presentStudents, studentAgg.totalStudents)
-        : null;
-      const absentCount = hasAttendanceData ? Math.max(studentAgg.totalStudents - attendanceAgg.presentStudents, 0) : null;
+    for (const cls of summaryRows) {
+      const studentAgg = studentMap.get(cls.id) ?? { total: 0, loaded: 0, pending: 0, notFound: 0 };
+      const attAgg = attendanceMap.get(cls.id) ?? { totalRows: 0, presentCount: 0 };
 
-      let status: 'no_link' | 'active' | 'inactive' | 'expired' = 'no_link';
-      let isActive = false;
-      let isExpired = false;
-      let expiresAt: Date | null = null;
-      let remainingDays: number | null = null;
+      totalStudents += studentAgg.total;
+      totalLoaded += studentAgg.loaded;
+      totalPending += studentAgg.pending;
+      totalNotFound += studentAgg.notFound;
 
-      if (shareLink) {
-        isActive = shareLink.isActive;
-        expiresAt = shareLink.expiresAt;
-        isExpired = Boolean(expiresAt && expiresAt.getTime() <= now);
-
-        if (isExpired) {
-          status = 'expired';
-          expiredLinkCount += 1;
-        } else if (isActive) {
-          status = 'active';
-          activeLinkCount += 1;
-        } else {
-          status = 'inactive';
-          inactiveLinkCount += 1;
-        }
-
-        if (expiresAt) {
-          remainingDays = Math.ceil((expiresAt.getTime() - now) / dayMs);
-        }
-
-        if (
-          isActive &&
-          expiresAt &&
-          expiresAt.getTime() > now &&
-          expiresAt.getTime() <= expiringThreshold
-        ) {
-          expiringSoonLinkCount += 1;
-        }
+      if (studentAgg.total > 0 && studentAgg.loaded < studentAgg.total) {
+        classesWithIncompletePhoto++;
       }
 
-      return {
-        classId: item.id,
-        className: item.courseName,
-        classCode: item.courseCode,
-        semester: item.semester,
-        instructor: item.instructor,
-        examDate: item.examDate ?? undefined,
-        examRoom: item.examRoom ?? undefined,
-        examTime: item.examTime ?? undefined,
-        examShift: item.examShift ?? undefined,
-        studentCount: studentAgg.totalStudents,
-        validPhotoRate: this.toPercent(studentAgg.loadedStudents, studentAgg.totalStudents),
-        presentRate,
-        absentCount,
-        attendanceStatus: hasAttendanceData ? 'available' : 'no_data',
-        shareLink: {
-          status,
-          isActive,
-          isExpired,
-          requireLogin: shareLink?.requireLogin ?? false,
-          expiresAt,
-          remainingDays,
-        },
-      };
-    });
+      if (cls.examDate) {
+        const d = new Date(cls.examDate);
+        if (d >= today && d <= todayEnd) classesWithExamToday++;
+        if (d >= startOfWeek && d <= endOfWeek) classesWithExamThisWeek++;
+      }
 
-    const filtered = applyFilter(allClasses, options);
-    const sorted = applySort(filtered, options);
-    const paged = applyPagination(sorted, options.page, options.limit);
-    const totalItems = sorted.length;
-    const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / options.limit);
+      if (cls.examRoom) {
+        const existing = roomMap.get(cls.examRoom) ?? { classCount: 0, studentCount: 0 };
+        roomMap.set(cls.examRoom, {
+          classCount: existing.classCount + 1,
+          studentCount: existing.studentCount + studentAgg.total,
+        });
+      }
+
+      const shiftKey = cls.examShift ?? cls.examTime ?? 'Chưa xác định';
+      const existingShift = shiftMap.get(shiftKey) ?? { examTime: cls.examTime, classCount: 0, studentCount: 0 };
+      shiftMap.set(shiftKey, {
+        examTime: existingShift.examTime,
+        classCount: existingShift.classCount + 1,
+        studentCount: existingShift.studentCount + studentAgg.total,
+      });
+
+      const existingCourse = courseMap.get(cls.courseCode) ?? { courseName: cls.courseName, classCount: 0, studentCount: 0 };
+      courseMap.set(cls.courseCode, {
+        courseName: cls.courseName,
+        classCount: existingCourse.classCount + 1,
+        studentCount: existingCourse.studentCount + studentAgg.total,
+      });
+
+      if (attAgg.totalRows > 0) {
+        classesWithAttendance++;
+        globalPresent += attAgg.presentCount;
+        // Số vắng mặt = Tổng thí sinh trong lớp - Số thí sinh có mặt
+        const absentCount = Math.max(studentAgg.total - attAgg.presentCount, 0);
+        globalAbsent += absentCount;
+      } else {
+        totalStudentsInUnmarkedClasses += studentAgg.total;
+      }
+    }
+
+    // ── 6b. Tổng hợp All Exams list (từ allExamsRows) ─────────────────
+    const allExams: UpcomingExamItem[] = [];
+    for (const cls of allExamsRows) {
+      if (cls.examDate) {
+        const studentAgg = studentMap.get(cls.id) ?? { total: 0, loaded: 0, pending: 0, notFound: 0 };
+        const attAgg = attendanceMap.get(cls.id) ?? { totalRows: 0, presentCount: 0 };
+
+        const examDateObj = new Date(cls.examDate);
+        const presentCount = attAgg.totalRows > 0 ? attAgg.presentCount : null;
+        const absentCount = attAgg.totalRows > 0
+          ? Math.max(studentAgg.total - attAgg.presentCount, 0)
+          : null;
+        const attendanceRate = attAgg.totalRows > 0
+          ? this.toPercent(attAgg.presentCount, studentAgg.total)
+          : null;
+
+        allExams.push({
+          classId: cls.id,
+          courseCode: cls.courseCode,
+          courseName: cls.courseName,
+          examDate: examDateObj.toISOString().split('T')[0],
+          examRoom: cls.examRoom,
+          examTime: cls.examTime,
+          examShift: cls.examShift,
+          studentCount: studentAgg.total,
+          validPhotoRate: this.toPercent(studentAgg.loaded, studentAgg.total),
+          presentCount,
+          absentCount,
+          attendanceRate,
+        });
+      }
+    }
+
+    // ── 7. Share links summary ─────────────────────────────────────────
+    let activeCount = 0;
+    let publicActiveCount = 0;
+    let privateActiveCount = 0;
+    let expiringSoon24hCount = 0;
+    let expiredCount = 0;
+    let inactiveCount = 0;
+
+    for (const link of shareLinks) {
+      const isExpired = Boolean(link.expiresAt && new Date(link.expiresAt).getTime() <= now);
+
+      if (isExpired) {
+        expiredCount++;
+      } else if (link.isActive) {
+        activeCount++;
+        if (link.requireLogin) {
+          privateActiveCount++;
+        } else {
+          publicActiveCount++;
+        }
+        // Kiểm tra sắp hết hạn trong 24h
+        if (link.expiresAt && new Date(link.expiresAt) <= expiring24hThreshold) {
+          expiringSoon24hCount++;
+        }
+      } else {
+        inactiveCount++;
+      }
+    }
+
+    // ── 8. Distinct counters ───────────────────────────────────────────
+    const totalDistinctCourses = courseMap.size;
+    const totalDistinctRooms = roomMap.size;
+    const totalDistinctShifts = shiftMap.size;
+    const classesWithoutAttendance = summaryRows.length - classesWithAttendance;
+    const totalAttendanceRows = globalPresent + globalAbsent;
+    const globalPresentRate = totalAttendanceRows > 0
+      ? this.toPercent(globalPresent, totalAttendanceRows)
+      : null;
 
     return {
-      summary: {
-        classCount: classRows.length,
-        studentCount: totalStudents,
-        validPhotoRate: this.toPercent(totalLoadedStudents, totalStudents),
-        expiringSoonLinkCount,
-        activeLinkCount,
-        inactiveLinkCount,
-        expiredLinkCount,
+      overview: {
+        totalClasses: summaryRows.length,
+        totalStudents: totalUniqueStudents,
+        totalDistinctCourses,
+        totalDistinctRooms,
+        totalDistinctShifts,
+        classesWithExamToday,
+        classesWithExamThisWeek,
       },
-      classes: paged,
-      pagination: {
-        page: options.page,
-        limit: options.limit,
-        totalItems,
-        totalPages,
+      photoHealth: {
+        validPhotoRate: this.toPercent(totalLoaded, totalStudents),
+        loadedCount: totalLoaded,
+        pendingCount: totalPending,
+        notFoundCount: totalNotFound,
+        classesWithIncompletePhoto,
       },
-      filters: {
-        expiringSoonDays: options.expiringSoonDays,
-        search: options.search,
-        attendanceStatus: options.attendanceStatus,
-        shareLinkStatus: options.shareLinkStatus,
-        sortBy: options.sortBy,
-        sortOrder: options.sortOrder,
+      allExams,
+      logistics: {
+        byRoom: [...roomMap.entries()]
+          .map(([examRoom, stat]) => ({ examRoom, ...stat }))
+          .sort((a, b) => b.studentCount - a.studentCount),
+        byShift: [...shiftMap.entries()]
+          .map(([examShift, stat]) => ({ examShift, ...stat }))
+          .sort((a, b) => b.studentCount - a.studentCount),
+        byCourse: [...courseMap.entries()]
+          .map(([courseCode, stat]) => ({ courseCode, ...stat }))
+          .sort((a, b) => b.studentCount - a.studentCount),
+      },
+      attendance: {
+        classesWithAttendance,
+        classesWithoutAttendance,
+        totalStudents: totalUniqueStudents,
+        totalNotMarked: totalStudentsInUnmarkedClasses,
+        totalPresent: globalPresent,
+        totalAbsent: globalAbsent,
+        globalPresentRate,
+      },
+      shareLinks: {
+        totalLinks: shareLinks.length,
+        activeCount,
+        publicActiveCount,
+        privateActiveCount,
+        expiringSoon24hCount,
+        expiredCount,
+        inactiveCount,
+        expiredOrInactiveCount: expiredCount + inactiveCount,
+      },
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Trả về cấu trúc rỗng khi giảng viên chưa có lớp nào.
+   * @returns ExamCommandCenterResponse rỗng.
+   */
+  private buildEmptyResponse(): ExamCommandCenterResponse {
+    return {
+      overview: {
+        totalClasses: 0,
+        totalStudents: 0,
+        totalDistinctCourses: 0,
+        totalDistinctRooms: 0,
+        totalDistinctShifts: 0,
+        classesWithExamToday: 0,
+        classesWithExamThisWeek: 0,
+      },
+      photoHealth: {
+        validPhotoRate: 0,
+        loadedCount: 0,
+        pendingCount: 0,
+        notFoundCount: 0,
+        classesWithIncompletePhoto: 0,
+      },
+      allExams: [],
+      logistics: { byRoom: [], byShift: [], byCourse: [] },
+      attendance: {
+        classesWithAttendance: 0,
+        classesWithoutAttendance: 0,
+        totalStudents: 0,
+        totalNotMarked: 0,
+        totalPresent: 0,
+        totalAbsent: 0,
+        globalPresentRate: null,
+      },
+      shareLinks: {
+        totalLinks: 0,
+        activeCount: 0,
+        publicActiveCount: 0,
+        privateActiveCount: 0,
+        expiringSoon24hCount: 0,
+        expiredCount: 0,
+        inactiveCount: 0,
+        expiredOrInactiveCount: 0,
       },
       generatedAt: new Date().toISOString(),
     };

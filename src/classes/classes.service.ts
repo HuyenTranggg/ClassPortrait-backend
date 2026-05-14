@@ -15,7 +15,7 @@ import { ClassImportService } from './import/import.service';
 import { ClassShareService, SharedClassView, ShareLinkView } from './share/share.service';
 import { AttendanceStatus } from './attendance/entities/attendance.entity';
 import { ClassAttendanceService, ClassAttendanceView, AttendanceMutationView } from './attendance/attendance.service';
-import { ClassDashboardService, TeacherDashboardOverview, TeacherDashboardQueryOptions } from './dashboard/dashboard.service';
+import { ClassDashboardService, ExamCommandCenterResponse, DashboardFilterOptions } from './dashboard/dashboard.service';
 
 @Injectable()
 export class ClassesService {
@@ -221,15 +221,15 @@ export class ClassesService {
   }
 
   /**
-   * Lấy dữ liệu dashboard tổng hợp cho giáo viên hiện tại.
+   * Lấy dữ liệu Exam Command Center tổng hợp cho giảng viên.
    * @param userId ID người dùng hiện tại.
-   * @param options Bộ tùy chọn filter/sort/pagination của dashboard.
-   * @returns Snapshot dữ liệu dashboard.
+   * @param options Tùy chọn lọc dữ liệu dashboard.
+   * @returns Snapshot dữ liệu dashboard Exam Command Center.
    */
-  async getTeacherDashboardOverview(
+  async getExamCommandCenter(
     userId: string,
-    options?: TeacherDashboardQueryOptions,
-  ): Promise<TeacherDashboardOverview> {
-    return this.classDashboardService.getTeacherOverview(userId, options);
+    options?: DashboardFilterOptions,
+  ): Promise<ExamCommandCenterResponse> {
+    return this.classDashboardService.getExamCommandCenter(userId, options);
   }
 }
