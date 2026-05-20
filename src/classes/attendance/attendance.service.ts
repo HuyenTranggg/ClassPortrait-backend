@@ -1,9 +1,11 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AttendanceEntity, AttendanceStatus } from './entities/attendance.entity';
 import { ClassEntity } from '../entities/class.entity';
 import { StudentEntity } from '../../students/entities/student.entity';
+import { ShareLinkEntity } from '../share/entities/share-link.entity';
+import { resolveShareLinkExpiresAt, verifyShareLinkSignature } from '../../common/utils/share-link-signature.util';
 
 export type AttendanceStudentView = {
   studentId: string;
@@ -11,6 +13,7 @@ export type AttendanceStudentView = {
   name?: string;
   status: AttendanceStatus;
   markedAt: Date | null;
+  markedBy: string | null;
 };
 
 export type ClassAttendanceView = {
@@ -28,6 +31,17 @@ export type AttendanceMutationView = {
   studentId: string;
   status: AttendanceStatus;
   markedAt: Date;
+  markedBy: string | null;
+};
+
+/**
+ * Context thông tin share link được truyền từ Controller xuống Service
+ * để xác thực quyền điểm danh của giám thị.
+ */
+export type ShareTokenContext = {
+  shareId: string;
+  exp: number;
+  sig: string;
 };
 
 @Injectable()
@@ -39,6 +53,8 @@ export class ClassAttendanceService {
     private readonly studentsRepository: Repository<StudentEntity>,
     @InjectRepository(AttendanceEntity)
     private readonly attendanceRepository: Repository<AttendanceEntity>,
+    @InjectRepository(ShareLinkEntity)
+    private readonly shareLinksRepository: Repository<ShareLinkEntity>,
   ) {}
 
   /**
@@ -51,6 +67,66 @@ export class ClassAttendanceService {
     const isOwned = await this.classesRepository.exists({ where: { id: classId, userId } });
     if (!isOwned) {
       throw new NotFoundException('Khong tim thay lop thuoc ve nguoi dung hien tai');
+    }
+  }
+
+  /**
+   * Kiểm tra quyền truy cập điểm danh: chủ lớp hoặc giám thị hợp lệ qua share link.
+   * Giám thị hợp lệ khi: có userId + có shareToken hợp lệ + link đang active + requireLogin=true.
+   * @param classId ID lớp cần điểm danh.
+   * @param userId ID người dùng hiện tại.
+   * @param shareToken Context share link (tuỳ chọn, dành cho giám thị).
+   * @returns Không trả dữ liệu; ném lỗi nếu không có quyền.
+   */
+  private async assertAttendanceAccess(
+    classId: string,
+    userId: string,
+    shareToken?: ShareTokenContext,
+  ): Promise<void> {
+    // Nếu là chủ lớp → luôn được phép
+    const isOwner = await this.classesRepository.exists({ where: { id: classId, userId } });
+    if (isOwner) return;
+
+    // Nếu không phải chủ lớp, kiểm tra quyền qua share link
+    if (!shareToken) {
+      throw new NotFoundException('Khong co quyen truy cap lop nay');
+    }
+
+    const { shareId, exp, sig } = shareToken;
+
+    if (!Number.isInteger(exp) || exp <= 0 || !sig) {
+      throw new ForbiddenException('Thong tin share link khong hop le');
+    }
+
+    if (!verifyShareLinkSignature(shareId, exp, sig)) {
+      throw new ForbiddenException('Chu ky share link khong hop le hoac da het han');
+    }
+
+    const shareLink = await this.shareLinksRepository.findOne({ where: { id: shareId } });
+
+    if (!shareLink) {
+      throw new NotFoundException('Share link khong ton tai');
+    }
+
+    if (!shareLink.isActive) {
+      throw new ForbiddenException('Share link da bi vo hieu hoa');
+    }
+
+    if (!shareLink.requireLogin) {
+      throw new ForbiddenException('Share link nay khong cap quyen diem danh (chi xem anh)');
+    }
+
+    if (shareLink.classId !== classId) {
+      throw new ForbiddenException('Share link khong tuong ung voi lop nay');
+    }
+
+    const expectedExp = resolveShareLinkExpiresAt(shareLink.expiresAt);
+    if (exp !== expectedExp) {
+      throw new ForbiddenException('Share link khong con hop le voi thoi diem het han hien tai');
+    }
+
+    if (shareLink.expiresAt && Date.now() > shareLink.expiresAt.getTime()) {
+      throw new ForbiddenException('Share link da het han');
     }
   }
 
@@ -70,13 +146,20 @@ export class ClassAttendanceService {
 
   /**
    * Lấy danh sách điểm danh của cả lớp, có thể kèm thống kê tổng quan.
+   * Hỗ trợ cả chủ lớp và giám thị có share link hợp lệ.
    * @param classId ID lớp học cần lấy điểm danh.
    * @param userId ID người dùng hiện tại để kiểm tra quyền.
    * @param includeStats Cờ xác định có trả thêm thống kê hay không.
+   * @param shareToken Context share link (tuỳ chọn, dành cho giám thị).
    * @returns Dữ liệu điểm danh theo từng sinh viên và thống kê (nếu bật).
    */
-  async getClassAttendance(classId: string, userId: string, includeStats = true): Promise<ClassAttendanceView> {
-    await this.assertClassOwnership(classId, userId);
+  async getClassAttendance(
+    classId: string,
+    userId: string,
+    includeStats = true,
+    shareToken?: ShareTokenContext,
+  ): Promise<ClassAttendanceView> {
+    await this.assertAttendanceAccess(classId, userId, shareToken);
 
     const students = await this.studentsRepository.find({
       where: { classId },
@@ -94,6 +177,7 @@ export class ClassAttendanceService {
         name: student.fullName ?? undefined,
         status: attendance?.status ?? AttendanceStatus.ABSENT,
         markedAt: attendance?.markedAt ?? null,
+        markedBy: attendance?.markedBy ?? null,
       };
     });
 
@@ -120,13 +204,20 @@ export class ClassAttendanceService {
 
   /**
    * Toggle trạng thái điểm danh của một sinh viên trong lớp.
+   * Hỗ trợ cả chủ lớp và giám thị có share link hợp lệ.
    * @param classId ID lớp học.
    * @param studentId ID sinh viên cần toggle.
    * @param userId ID người dùng hiện tại.
+   * @param shareToken Context share link (tuỳ chọn, dành cho giám thị).
    * @returns Trạng thái điểm danh mới sau khi toggle.
    */
-  async toggleAttendance(classId: string, studentId: string, userId: string): Promise<AttendanceMutationView> {
-    await this.assertClassOwnership(classId, userId);
+  async toggleAttendance(
+    classId: string,
+    studentId: string,
+    userId: string,
+    shareToken?: ShareTokenContext,
+  ): Promise<AttendanceMutationView> {
+    await this.assertAttendanceAccess(classId, userId, shareToken);
     await this.assertStudentInClass(classId, studentId);
 
     const result = await this.attendanceRepository.manager.transaction(async (manager) => {
@@ -139,12 +230,14 @@ export class ClassAttendanceService {
           studentId,
           status: AttendanceStatus.PRESENT,
           markedAt: new Date(),
+          markedBy: userId,
         });
         return repository.save(created);
       }
 
       existing.status = existing.status === AttendanceStatus.PRESENT ? AttendanceStatus.ABSENT : AttendanceStatus.PRESENT;
       existing.markedAt = new Date();
+      existing.markedBy = userId;
       return repository.save(existing);
     });
 
@@ -153,15 +246,18 @@ export class ClassAttendanceService {
       studentId,
       status: result.status,
       markedAt: result.markedAt,
+      markedBy: result.markedBy,
     };
   }
 
   /**
    * Đặt trạng thái điểm danh tường minh cho một sinh viên.
+   * Hỗ trợ cả chủ lớp và giám thị có share link hợp lệ.
    * @param classId ID lớp học.
    * @param studentId ID sinh viên cần cập nhật.
    * @param userId ID người dùng hiện tại.
    * @param status Trạng thái điểm danh cần đặt.
+   * @param shareToken Context share link (tuỳ chọn, dành cho giám thị).
    * @returns Trạng thái điểm danh sau khi cập nhật.
    */
   async setAttendance(
@@ -169,8 +265,9 @@ export class ClassAttendanceService {
     studentId: string,
     userId: string,
     status: AttendanceStatus,
+    shareToken?: ShareTokenContext,
   ): Promise<AttendanceMutationView> {
-    await this.assertClassOwnership(classId, userId);
+    await this.assertAttendanceAccess(classId, userId, shareToken);
     await this.assertStudentInClass(classId, studentId);
 
     const result = await this.attendanceRepository.manager.transaction(async (manager) => {
@@ -183,12 +280,14 @@ export class ClassAttendanceService {
           studentId,
           status,
           markedAt: new Date(),
+          markedBy: userId,
         });
         return repository.save(created);
       }
 
       existing.status = status;
       existing.markedAt = new Date();
+      existing.markedBy = userId;
       return repository.save(existing);
     });
 
@@ -197,13 +296,15 @@ export class ClassAttendanceService {
       studentId,
       status: result.status,
       markedAt: result.markedAt,
+      markedBy: result.markedBy,
     };
   }
 
   /**
    * Reset trạng thái điểm danh của toàn bộ sinh viên trong lớp.
+   * Chỉ chủ lớp mới được reset, giám thị không có quyền này.
    * @param classId ID lớp học cần reset.
-   * @param userId ID người dùng hiện tại.
+   * @param userId ID người dùng hiện tại (phải là chủ lớp).
    * @param status Trạng thái reset mục tiêu (hỗ trợ absent).
    * @returns Kết quả thao tác reset gồm số lượng bản ghi đã cập nhật.
    */
@@ -212,6 +313,7 @@ export class ClassAttendanceService {
       throw new ForbiddenException('Chi ho tro reset ve absent');
     }
 
+    // Reset chỉ dành cho chủ lớp, không hỗ trợ giám thị
     await this.assertClassOwnership(classId, userId);
 
     const students = await this.studentsRepository.find({ where: { classId }, select: { id: true } });
@@ -237,6 +339,7 @@ export class ClassAttendanceService {
         const row = existingMap.get(studentId) ?? repository.create({ classId, studentId });
         row.status = AttendanceStatus.ABSENT;
         row.markedAt = now;
+        row.markedBy = userId;
         return row;
       });
 

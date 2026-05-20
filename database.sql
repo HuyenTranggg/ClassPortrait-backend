@@ -146,7 +146,7 @@ CREATE TABLE share_links (
         ON DELETE CASCADE
 );
 
--- Attendance table (unchanged, but class_id now references exam sessions)
+-- Attendance table (updated: added marked_by for audit trail)
 CREATE TABLE attendance (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 
@@ -156,10 +156,14 @@ CREATE TABLE attendance (
     status attendance_status_enum NOT NULL DEFAULT 'absent',
     marked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
+    -- ID của người thực hiện điểm danh (quản lý hoặc giám thị đã đăng nhập qua share link)
+    marked_by UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+
     UNIQUE (class_id, student_id)
 );
 
 CREATE INDEX idx_attendance_class_id ON attendance (class_id);
+CREATE INDEX idx_attendance_marked_by ON attendance (marked_by);
 
 -- Verification query
 SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
