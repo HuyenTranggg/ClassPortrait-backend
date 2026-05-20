@@ -14,7 +14,7 @@ import { ClassQueryService } from './class-query.service';
 import { ClassImportService } from './import/import.service';
 import { ClassShareService, SharedClassView, ShareLinkView } from './share/share.service';
 import { AttendanceStatus } from './attendance/entities/attendance.entity';
-import { ClassAttendanceService, ClassAttendanceView, AttendanceMutationView } from './attendance/attendance.service';
+import { ClassAttendanceService, ClassAttendanceView, AttendanceMutationView, ShareTokenContext } from './attendance/attendance.service';
 import { ClassDashboardService, ExamCommandCenterResponse, DashboardFilterOptions } from './dashboard/dashboard.service';
 
 @Injectable()
@@ -177,8 +177,8 @@ export class ClassesService {
    * @param includeStats Cờ xác định có trả thống kê hay không.
    * @returns Dữ liệu điểm danh của lớp.
    */
-  async getClassAttendance(classId: string, userId: string, includeStats = true): Promise<ClassAttendanceView> {
-    return this.classAttendanceService.getClassAttendance(classId, userId, includeStats);
+  async getClassAttendance(classId: string, userId: string, includeStats = true, shareToken?: ShareTokenContext): Promise<ClassAttendanceView> {
+    return this.classAttendanceService.getClassAttendance(classId, userId, includeStats, shareToken);
   }
 
   /**
@@ -188,8 +188,8 @@ export class ClassesService {
    * @param userId ID người dùng hiện tại.
    * @returns Trạng thái điểm danh mới sau thao tác toggle.
    */
-  async toggleAttendance(classId: string, studentId: string, userId: string): Promise<AttendanceMutationView> {
-    return this.classAttendanceService.toggleAttendance(classId, studentId, userId);
+  async toggleAttendance(classId: string, studentId: string, userId: string, shareToken?: ShareTokenContext): Promise<AttendanceMutationView> {
+    return this.classAttendanceService.toggleAttendance(classId, studentId, userId, shareToken);
   }
 
   /**
@@ -205,8 +205,9 @@ export class ClassesService {
     studentId: string,
     userId: string,
     status: AttendanceStatus,
+    shareToken?: ShareTokenContext,
   ): Promise<AttendanceMutationView> {
-    return this.classAttendanceService.setAttendance(classId, studentId, userId, status);
+    return this.classAttendanceService.setAttendance(classId, studentId, userId, status, shareToken);
   }
 
   /**

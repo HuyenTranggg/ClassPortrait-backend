@@ -46,6 +46,20 @@ export type SharedClassView = {
     photoStatus: string;
     importOrder: number;
   }>;
+  /**
+   * Người xem này có quyền điểm danh không.
+   * true khi link yêu cầu đăng nhập và người xem đã xác thực.
+   */
+  canTakeAttendance: boolean;
+  /**
+   * Thông tin share link để frontend dùng khi gọi API điểm danh uỷ quyền.
+   * Chỉ có khi canTakeAttendance=true.
+   */
+  shareContext?: {
+    shareId: string;
+    exp: number;
+    sig: string;
+  };
 };
 
 @Injectable()
@@ -311,6 +325,15 @@ export class ClassShareService {
       order: { importOrder: 'ASC' },
     });
 
+    // Xác định xem người xem có quyền điểm danh không:
+    // canTakeAttendance = true khi link requireLogin=true và người xem đã xác thực (viewerUserId tồn tại)
+    const canTakeAttendance = shareLink.requireLogin && Boolean(viewerUserId);
+
+    // Nếu có quyền điểm danh, gửi kèm shareContext để frontend dùng khi gọi API điểm danh
+    const shareContext = canTakeAttendance
+      ? { shareId: shareLink.id, exp, sig }
+      : undefined;
+
     return {
       classInfo: {
         id: classEntity.id,
@@ -335,6 +358,8 @@ export class ClassShareService {
         photoStatus: student.photoStatus,
         importOrder: student.importOrder,
       })),
+      canTakeAttendance,
+      shareContext,
     };
   }
 }

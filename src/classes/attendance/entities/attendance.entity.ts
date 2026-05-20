@@ -1,6 +1,7 @@
 import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, Unique } from 'typeorm';
 import { ClassEntity } from '../../entities/class.entity';
 import { StudentEntity } from '../../../students/entities/student.entity';
+import { UserEntity } from '../../../auth/entities/user.entity';
 
 export enum AttendanceStatus {
   PRESENT = 'present',
@@ -38,4 +39,15 @@ export class AttendanceEntity {
 
   @Column({ name: 'marked_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   markedAt!: Date;
+
+  /**
+   * ID của người dùng đã thực hiện thao tác điểm danh (quản lý hoặc giám thị qua share link).
+   * Nullable vì có thể là dữ liệu cũ chưa có thông tin này.
+   */
+  @Column({ name: 'marked_by', type: 'uuid', nullable: true })
+  markedBy!: string | null;
+
+  @ManyToOne(() => UserEntity, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'marked_by' })
+  markedByUser?: UserEntity;
 }

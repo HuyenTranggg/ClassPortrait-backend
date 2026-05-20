@@ -10,11 +10,26 @@ import {
   Req,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiParam, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { ClassesService } from '../classes.service';
 import { SetAttendanceStatusDto } from './dto/set-attendance-status.dto';
 import { ResetAttendanceDto } from './dto/reset-attendance.dto';
 import { extractUserId, parseBoolean } from '../../common/utils/request-parser.util';
+import { ShareTokenContext } from './attendance.service';
+
+/**
+ * Trích xuất ShareTokenContext từ query params nếu đầy đủ.
+ * @param shareId ID của share link.
+ * @param exp Unix timestamp milliseconds.
+ * @param sig Chữ ký HMAC.
+ * @returns ShareTokenContext nếu cả 3 tham số đều có, undefined nếu thiếu.
+ */
+function extractShareToken(shareId?: string, exp?: string, sig?: string): ShareTokenContext | undefined {
+  if (!shareId || !exp || !sig) return undefined;
+  const expNum = Number(exp);
+  if (!Number.isFinite(expNum) || expNum <= 0) return undefined;
+  return { shareId, exp: expNum, sig };
+}
 
 @ApiTags('class-attendance')
 @ApiBearerAuth('bearer')
@@ -26,52 +41,78 @@ export class ClassAttendanceController {
   @ApiOperation({ summary: 'Lấy trạng thái điểm danh của cả lớp' })
   @ApiParam({ name: 'id', description: 'ID của lớp' })
   @ApiQuery({ name: 'includeStats', required: false, description: 'Có trả thống kê hay không', example: true })
+  @ApiQuery({ name: 'shareId', required: false, description: 'ID share link (dành cho giám thị)' })
+  @ApiQuery({ name: 'exp', required: false, description: 'Unix timestamp ms hết hạn của share link' })
+  @ApiQuery({ name: 'sig', required: false, description: 'Chữ ký HMAC của share link' })
   /**
-   * Lấy dữ liệu điểm danh toàn lớp cho người dùng sở hữu lớp.
+   * Lấy dữ liệu điểm danh toàn lớp. Hỗ trợ cả chủ lớp và giám thị qua share link.
    * @param id ID lớp học.
    * @param req Request hiện tại chứa thông tin người dùng đã xác thực.
    * @param includeStats Query xác định có trả thống kê hay không.
+   * @param shareId ID share link của giám thị (tuỳ chọn).
+   * @param exp Unix timestamp hết hạn của share link (tuỳ chọn).
+   * @param sig Chữ ký HMAC của share link (tuỳ chọn).
    * @returns Danh sách điểm danh sinh viên của lớp và thống kê (nếu bật).
    */
   async getClassAttendance(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Req() req: any,
     @Query('includeStats') includeStats?: string,
+    @Query('shareId') shareId?: string,
+    @Query('exp') exp?: string,
+    @Query('sig') sig?: string,
   ) {
     const userId = extractUserId(req);
-    return this.classesService.getClassAttendance(id, userId, parseBoolean(includeStats, true));
+    const shareToken = extractShareToken(shareId, exp, sig);
+    return this.classesService.getClassAttendance(id, userId, parseBoolean(includeStats, true), shareToken);
   }
 
   @Patch(':id/attendance/students/:studentId/toggle')
   @ApiOperation({ summary: 'Toggle điểm danh cho một sinh viên trong lớp' })
   @ApiParam({ name: 'id', description: 'ID của lớp' })
   @ApiParam({ name: 'studentId', description: 'ID của sinh viên' })
+  @ApiQuery({ name: 'shareId', required: false, description: 'ID share link (dành cho giám thị)' })
+  @ApiQuery({ name: 'exp', required: false, description: 'Unix timestamp ms hết hạn của share link' })
+  @ApiQuery({ name: 'sig', required: false, description: 'Chữ ký HMAC của share link' })
   /**
-   * Đảo trạng thái điểm danh của một sinh viên trong lớp.
+   * Đảo trạng thái điểm danh của một sinh viên. Hỗ trợ cả chủ lớp và giám thị.
    * @param id ID lớp học.
    * @param studentId ID sinh viên.
    * @param req Request hiện tại chứa thông tin người dùng đã xác thực.
+   * @param shareId ID share link của giám thị (tuỳ chọn).
+   * @param exp Unix timestamp hết hạn của share link (tuỳ chọn).
+   * @param sig Chữ ký HMAC của share link (tuỳ chọn).
    * @returns Trạng thái điểm danh mới của sinh viên sau khi toggle.
    */
   async toggleAttendance(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Param('studentId', new ParseUUIDPipe()) studentId: string,
     @Req() req: any,
+    @Query('shareId') shareId?: string,
+    @Query('exp') exp?: string,
+    @Query('sig') sig?: string,
   ) {
     const userId = extractUserId(req);
-    return this.classesService.toggleAttendance(id, studentId, userId);
+    const shareToken = extractShareToken(shareId, exp, sig);
+    return this.classesService.toggleAttendance(id, studentId, userId, shareToken);
   }
 
   @Put(':id/attendance/students/:studentId')
   @ApiOperation({ summary: 'Đặt trạng thái điểm danh tường minh cho sinh viên' })
   @ApiParam({ name: 'id', description: 'ID của lớp' })
   @ApiParam({ name: 'studentId', description: 'ID của sinh viên' })
+  @ApiQuery({ name: 'shareId', required: false, description: 'ID share link (dành cho giám thị)' })
+  @ApiQuery({ name: 'exp', required: false, description: 'Unix timestamp ms hết hạn của share link' })
+  @ApiQuery({ name: 'sig', required: false, description: 'Chữ ký HMAC của share link' })
   /**
-   * Cập nhật trạng thái điểm danh tường minh cho một sinh viên.
+   * Cập nhật trạng thái điểm danh tường minh cho một sinh viên. Hỗ trợ cả chủ lớp và giám thị.
    * @param id ID lớp học.
    * @param studentId ID sinh viên.
    * @param req Request hiện tại chứa thông tin người dùng đã xác thực.
    * @param body Payload chứa trạng thái điểm danh cần đặt.
+   * @param shareId ID share link của giám thị (tuỳ chọn).
+   * @param exp Unix timestamp hết hạn của share link (tuỳ chọn).
+   * @param sig Chữ ký HMAC của share link (tuỳ chọn).
    * @returns Trạng thái điểm danh của sinh viên sau khi cập nhật.
    */
   async setAttendance(
@@ -79,16 +120,21 @@ export class ClassAttendanceController {
     @Param('studentId', new ParseUUIDPipe()) studentId: string,
     @Req() req: any,
     @Body() body: SetAttendanceStatusDto,
+    @Query('shareId') shareId?: string,
+    @Query('exp') exp?: string,
+    @Query('sig') sig?: string,
   ) {
     const userId = extractUserId(req);
-    return this.classesService.setAttendance(id, studentId, userId, body.status);
+    const shareToken = extractShareToken(shareId, exp, sig);
+    return this.classesService.setAttendance(id, studentId, userId, body.status, shareToken);
   }
 
   @Post(':id/attendance/reset')
-  @ApiOperation({ summary: 'Reset trạng thái điểm danh toàn bộ lớp' })
+  @ApiOperation({ summary: 'Reset trạng thái điểm danh toàn bộ lớp (chỉ dành cho chủ lớp)' })
   @ApiParam({ name: 'id', description: 'ID của lớp' })
   /**
    * Reset điểm danh của toàn bộ sinh viên trong lớp về trạng thái chỉ định.
+   * Chỉ chủ lớp mới được thực hiện thao tác này.
    * @param id ID lớp học.
    * @param req Request hiện tại chứa thông tin người dùng đã xác thực.
    * @param body Payload reset điểm danh toàn lớp.
