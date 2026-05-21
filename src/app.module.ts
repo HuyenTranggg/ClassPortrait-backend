@@ -15,6 +15,7 @@ import { ImportHistoryEntity } from './classes/import/entities/import-history.en
 import { ImportHistoryClassEntity } from './classes/import/entities/import-history-class.entity';
 import { ShareLinkEntity } from './classes/share/entities/share-link.entity';
 import { AttendanceEntity } from './classes/attendance/entities/attendance.entity';
+import { TtsModule } from './tts/tts.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { AttendanceEntity } from './classes/attendance/entities/attendance.entit
     AuthModule,
     StudentsModule,
     ClassesModule,
+    TtsModule,
   ],
   controllers: [AppController],
   providers: [
