@@ -258,14 +258,18 @@ export class ClassImportService {
   private resolveMapping(parsedData: any, startRow: number, options?: ImportClassOptions): ResolvedImportMapping {
     let resolvedMapping: ResolvedImportMapping;
     if (options?.mappingMode === 'manual' && options?.mssvColumn && options?.nameColumn) {
+      resolvedMapping = this.importMappingService.detectColumnMapping(parsedData.headers, true);
       const mssvColumn = this.importMappingService.findHeaderKey(parsedData.headers, options.mssvColumn);
       const nameColumn = this.importMappingService.findHeaderKey(parsedData.headers, options.nameColumn);
       if (!mssvColumn || !nameColumn) {
         throw new UnprocessableEntityException('Không thể xác định cột MSSV và Họ và tên theo mapping thủ công');
       }
-      resolvedMapping = { mssvColumn, nameColumn, startRow };
+      resolvedMapping.mssvColumn = mssvColumn;
+      resolvedMapping.nameColumn = nameColumn;
+      resolvedMapping.startRow = startRow;
     } else {
       resolvedMapping = this.importMappingService.detectColumnMapping(parsedData.headers);
+      resolvedMapping.startRow = startRow;
     }
 
     if (!resolvedMapping.mssvColumn || !resolvedMapping.nameColumn) {
