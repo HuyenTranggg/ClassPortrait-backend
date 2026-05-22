@@ -56,7 +56,7 @@ export class ImportMappingService {
   /**
    * Detect column mapping for all required and optional fields
    */
-  detectColumnMapping(headers: string[]): ResolvedImportMapping {
+  detectColumnMapping(headers: string[], allowMissingRequired = false): ResolvedImportMapping {
     // Required fields
     const mssvKey = this.findHeaderByAliases(headers, ['mssv', 'mã số sinh viên', 'ma so sinh vien', 'student id']);
     const nameKey = this.findHeaderByAliases(headers, [
@@ -71,12 +71,14 @@ export class ImportMappingService {
       'full name',
     ]);
 
-    if (!mssvKey || !nameKey) {
-      this.assertInvalidColumnMapping('Không thể tự động nhận diện đầy đủ cột MSSV và Họ và tên');
-    }
+    if (!allowMissingRequired) {
+      if (!mssvKey || !nameKey) {
+        this.assertInvalidColumnMapping('Không thể tự động nhận diện đầy đủ cột MSSV và Họ và tên');
+      }
 
-    if (this.normalizeForCompare(mssvKey) === this.normalizeForCompare(nameKey)) {
-      this.assertInvalidColumnMapping('Cột MSSV và cột Họ và tên không được trùng nhau');
+      if (mssvKey && nameKey && this.normalizeForCompare(mssvKey) === this.normalizeForCompare(nameKey)) {
+        this.assertInvalidColumnMapping('Cột MSSV và cột Họ và tên không được trùng nhau');
+      }
     }
 
     // Optional fields for exam session grouping and student info
@@ -122,8 +124,8 @@ export class ImportMappingService {
     const emailKey = this.findHeaderByAliases(headers, ['email', 'thư điện tử', 'thu dien tu']);
 
     return {
-      mssvColumn: mssvKey,
-      nameColumn: nameKey,
+      mssvColumn: mssvKey || '',
+      nameColumn: nameKey || '',
       startRow: 2, // default
       // Optional columns
       semesterColumn: semesterKey,
