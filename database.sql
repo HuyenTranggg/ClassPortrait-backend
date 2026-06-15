@@ -12,8 +12,7 @@ CREATE TYPE photo_status_enum AS ENUM (
 
 CREATE TYPE source_type_enum AS ENUM (
     'excel',
-    'google_sheet',
-    'onedrive'
+    'google_sheet'
 );
 
 CREATE TYPE import_action_enum AS ENUM (
@@ -75,6 +74,8 @@ CREATE TABLE students (
     dob DATE NULL,
     email VARCHAR(255) NULL,
     notes TEXT NULL,
+    face_descriptor FLOAT[] NULL,
+    face_descriptor_synced_at TIMESTAMP NULL,
 
     CONSTRAINT fk_students_class
         FOREIGN KEY (class_id)

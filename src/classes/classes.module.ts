@@ -19,6 +19,7 @@ import { ImportHistoryService } from './import/services/import-history.service';
 import { ImportGroupingService } from './import/services/import-grouping.service';
 import { ImportPersistenceService } from './import/services/import-persistence.service';
 import { ClassAttendanceService } from './attendance/attendance.service';
+import { AiFaceService } from './attendance/ai-face.service';
 import { ClassDashboardService } from './dashboard/dashboard.service';
 import { ClassEntity } from './entities/class.entity';
 import { StudentEntity } from '../students/entities/student.entity';
@@ -57,6 +58,7 @@ import { ShareLinkSignatureMiddleware } from './share/middlewares/share-link-sig
     ClassImportService,
     ClassShareService,
     ClassAttendanceService,
+    AiFaceService,
     ClassDashboardService,
     ImportParserService,
     FileImportParserService,

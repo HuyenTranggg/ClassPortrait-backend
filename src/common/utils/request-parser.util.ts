@@ -46,8 +46,7 @@ export function parseSourceType(input?: string): SourceType | undefined {
   const normalized = input.trim().toLowerCase();
   if (normalized === SourceType.EXCEL) return SourceType.EXCEL;
   if (normalized === SourceType.GOOGLE_SHEET) return SourceType.GOOGLE_SHEET;
-  if (normalized === SourceType.ONEDRIVE) return SourceType.ONEDRIVE;
-  throw new BadRequestException('sourceType không hợp lệ. Giá trị hợp lệ: excel, google_sheet, onedrive');
+  throw new BadRequestException('sourceType không hợp lệ. Giá trị hợp lệ: excel, google_sheet');
 }
 
 /**

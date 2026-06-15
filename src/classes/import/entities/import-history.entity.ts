@@ -11,7 +11,6 @@ import { UserEntity } from '../../../auth/entities/user.entity';
 export enum SourceType {
   EXCEL = 'excel',
   GOOGLE_SHEET = 'google_sheet',
-  ONEDRIVE = 'onedrive',
 }
 
 export enum ImportAction {
