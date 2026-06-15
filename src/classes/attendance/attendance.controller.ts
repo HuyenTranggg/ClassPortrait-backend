@@ -14,6 +14,7 @@ import { ApiTags, ApiOperation, ApiParam, ApiBearerAuth, ApiQuery } from '@nestj
 import { ClassesService } from '../classes.service';
 import { SetAttendanceStatusDto } from './dto/set-attendance-status.dto';
 import { ResetAttendanceDto } from './dto/reset-attendance.dto';
+import { AiVerifyAttendanceDto } from './dto/ai-verify-attendance.dto';
 import { extractUserId, parseBoolean } from '../../common/utils/request-parser.util';
 import { ShareTokenContext } from './attendance.service';
 
@@ -143,5 +144,40 @@ export class ClassAttendanceController {
   async resetAttendance(@Param('id', new ParseUUIDPipe()) id: string, @Req() req: any, @Body() body: ResetAttendanceDto) {
     const userId = extractUserId(req);
     return this.classesService.resetAttendance(id, userId, body.status);
+  }
+
+  @Post(':id/attendance/students/:studentId/ai-verify')
+  @ApiOperation({ summary: 'Xác thực khuôn mặt AI và ghi nhận điểm danh' })
+  @ApiParam({ name: 'id', description: 'ID của lớp' })
+  @ApiParam({ name: 'studentId', description: 'ID của sinh viên' })
+  @ApiQuery({ name: 'shareId', required: false, description: 'ID share link (dành cho giám thị)' })
+  @ApiQuery({ name: 'exp', required: false, description: 'Unix timestamp ms hết hạn của share link' })
+  @ApiQuery({ name: 'sig', required: false, description: 'Chữ ký HMAC của share link' })
+  /**
+   * Nhận face descriptor từ Frontend, so khớp với descriptor gốc trong DB,
+   * và ghi nhận điểm danh nếu khuôn mặt khớp.
+   * Hỗ trợ cả chủ lớp (JWT) và giám thị (shareToken).
+   *
+   * @param id ID lớp học.
+   * @param studentId UUID sinh viên cần xác thực.
+   * @param req Request hiện tại.
+   * @param body DTO chứa descriptor 128-d từ Frontend.
+   * @param shareId ID share link của giám thị (tuỳ chọn).
+   * @param exp Unix timestamp hết hạn của share link (tuỳ chọn).
+   * @param sig Chữ ký HMAC của share link (tuỳ chọn).
+   * @returns status 'present' và matchScore nếu xác thực thành công.
+   */
+  async aiVerifyAttendance(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('studentId', new ParseUUIDPipe()) studentId: string,
+    @Req() req: any,
+    @Body() body: AiVerifyAttendanceDto,
+    @Query('shareId') shareId?: string,
+    @Query('exp') exp?: string,
+    @Query('sig') sig?: string,
+  ) {
+    const userId = extractUserId(req);
+    const shareToken = extractShareToken(shareId, exp, sig);
+    return this.classesService.verifyFaceAndMark(id, studentId, userId, body.descriptor, shareToken);
   }
 }

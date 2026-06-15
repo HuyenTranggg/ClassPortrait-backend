@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AttendanceEntity, AttendanceStatus } from './entities/attendance.entity';
@@ -6,6 +6,7 @@ import { ClassEntity } from '../entities/class.entity';
 import { StudentEntity } from '../../students/entities/student.entity';
 import { ShareLinkEntity } from '../share/entities/share-link.entity';
 import { resolveShareLinkExpiresAt, verifyShareLinkSignature } from '../../common/utils/share-link-signature.util';
+import { AiFaceService } from './ai-face.service';
 
 export type AttendanceStudentView = {
   studentId: string;
@@ -55,6 +56,7 @@ export class ClassAttendanceService {
     private readonly attendanceRepository: Repository<AttendanceEntity>,
     @InjectRepository(ShareLinkEntity)
     private readonly shareLinksRepository: Repository<ShareLinkEntity>,
+    private readonly aiFaceService: AiFaceService,
   ) {}
 
   /**
@@ -354,5 +356,55 @@ export class ClassAttendanceService {
     });
 
     return result;
+  }
+
+  /**
+   * Xác thực khuôn mặt bằng AI và ghi nhận điểm danh nếu khớp.
+   *
+   * Luồng:
+   * 1. Kiểm tra quyền truy cập (chủ lớp hoặc giám thị hợp lệ).
+   * 2. Lấy sinh viên và descriptor gốc từ DB (tự tính lại nếu hết TTL).
+   * 3. Tính cosine distance giữa descriptor từ frontend và descriptor gốc.
+   * 4a. Khớp  → ghi present → trả về { status, matchScore }.
+   * 4b. Không khớp → ném UnprocessableEntityException('FACE_MISMATCH').
+   *
+   * @param classId ID lớp học.
+   * @param studentId UUID sinh viên cần điểm danh.
+   * @param userId ID người dùng thực hiện thao tác.
+   * @param liveDescriptor Descriptor 128 chiều từ camera frontend.
+   * @param shareToken Context share link (tuỳ chọn, dành cho giám thị).
+   * @returns status và matchScore sau khi ghi nhận thành công.
+   */
+  async verifyFaceAndMark(
+    classId: string,
+    studentId: string,
+    userId: string,
+    liveDescriptor: number[],
+    shareToken?: ShareTokenContext,
+  ): Promise<{ status: AttendanceStatus; matchScore: number }> {
+    await this.assertAttendanceAccess(classId, userId, shareToken);
+
+    const student = await this.assertStudentInClass(classId, studentId);
+
+    // So khớp descriptor — có thể ném ServiceUnavailableException nếu model chưa load
+    // hoặc UnprocessableEntityException nếu ảnh thẻ không có mặt
+    const { isMatch, matchScore, distance } = await this.aiFaceService.matchDescriptor(
+      student,
+      liveDescriptor,
+    );
+
+    if (!isMatch) {
+      throw new UnprocessableEntityException({
+        error: 'FACE_MISMATCH',
+        message: 'Khuon mat khong khop voi anh the sinh vien.',
+        matchScore,
+        distance,
+      });
+    }
+
+    // Ghi nhận điểm danh
+    await this.setAttendance(classId, studentId, userId, AttendanceStatus.PRESENT, shareToken);
+
+    return { status: AttendanceStatus.PRESENT, matchScore };
   }
 }

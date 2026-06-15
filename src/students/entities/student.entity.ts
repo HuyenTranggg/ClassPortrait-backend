@@ -57,6 +57,21 @@ export class StudentEntity {
   @Column({ name: 'notes', type: 'text', nullable: true })
   notes!: string | null;
 
+  /**
+   * Face descriptor vector (128 chiều float) được trích xuất từ ảnh thẻ sinh viên bởi face-api.
+   * Nullable khi chưa được tính hoặc ảnh thẻ không nhận diện được khuôn mặt.
+   */
+  @Column({ name: 'face_descriptor', type: 'float', array: true, nullable: true })
+  faceDescriptor!: number[] | null;
+
+  /**
+   * Thời điểm face descriptor được tính lần cuối.
+   * Dùng để quyết định có cần re-compute hay không (TTL = 7 ngày).
+   * Null nghĩa là chưa bao giờ được tính.
+   */
+  @Column({ name: 'face_descriptor_synced_at', type: 'timestamp', nullable: true })
+  faceDescriptorSyncedAt!: Date | null;
+
   @OneToMany(() => AttendanceEntity, (attendance) => attendance.studentEntity)
   attendances!: AttendanceEntity[];
 }

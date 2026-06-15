@@ -75,6 +75,8 @@ CREATE TABLE students (
     dob DATE NULL,
     email VARCHAR(255) NULL,
     notes TEXT NULL,
+    face_descriptor FLOAT[] NULL,
+    face_descriptor_synced_at TIMESTAMP NULL,
 
     CONSTRAINT fk_students_class
         FOREIGN KEY (class_id)

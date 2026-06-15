@@ -233,4 +233,23 @@ export class ClassesService {
   ): Promise<ExamCommandCenterResponse> {
     return this.classDashboardService.getExamCommandCenter(userId, options);
   }
+
+  /**
+   * Xác thực khuôn mặt AI và ghi nhận điểm danh nếu khớp.
+   * @param classId ID lớp học.
+   * @param studentId UUID sinh viên cần xác thực.
+   * @param userId ID người dùng thực hiện thao tác.
+   * @param liveDescriptor Descriptor 128-d từ camera Frontend.
+   * @param shareToken Context share link (tuỳ chọn, dành cho giám thị).
+   * @returns status 'present' và matchScore sau khi xác thực thành công.
+   */
+  async verifyFaceAndMark(
+    classId: string,
+    studentId: string,
+    userId: string,
+    liveDescriptor: number[],
+    shareToken?: ShareTokenContext,
+  ): Promise<{ status: AttendanceStatus; matchScore: number }> {
+    return this.classAttendanceService.verifyFaceAndMark(classId, studentId, userId, liveDescriptor, shareToken);
+  }
 }
