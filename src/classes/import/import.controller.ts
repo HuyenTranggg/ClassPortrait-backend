@@ -37,7 +37,7 @@ export class ClassImportController {
   @ApiOperation({ summary: 'Lấy lịch sử import của người dùng hiện tại' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
-  @ApiQuery({ name: 'sourceType', required: false, enum: ['excel', 'google_sheet', 'onedrive'] })
+  @ApiQuery({ name: 'sourceType', required: false, enum: ['excel', 'google_sheet'] })
   @ApiResponse({ status: 200, description: 'Trả về danh sách lịch sử import có phân trang' })
   async getImportHistory(
     @Req() req: AuthenticatedRequest,

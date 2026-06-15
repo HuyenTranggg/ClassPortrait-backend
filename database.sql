@@ -12,8 +12,7 @@ CREATE TYPE photo_status_enum AS ENUM (
 
 CREATE TYPE source_type_enum AS ENUM (
     'excel',
-    'google_sheet',
-    'onedrive'
+    'google_sheet'
 );
 
 CREATE TYPE import_action_enum AS ENUM (
