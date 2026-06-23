@@ -248,8 +248,16 @@ export class ClassesService {
     studentId: string,
     userId: string,
     liveDescriptor: number[],
+    distanceThreshold: number,
     shareToken?: ShareTokenContext,
-  ): Promise<{ verified: true; matchScore: number }> {
-    return this.classAttendanceService.verifyFace(classId, studentId, userId, liveDescriptor, shareToken);
+  ): Promise<{ verified: true; matchScore: number; distance: number; threshold: number }> {
+    return this.classAttendanceService.verifyFace(
+      classId,
+      studentId,
+      userId,
+      liveDescriptor,
+      distanceThreshold,
+      shareToken,
+    );
   }
 }

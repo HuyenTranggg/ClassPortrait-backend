@@ -17,6 +17,10 @@ import { ResetAttendanceDto } from './dto/reset-attendance.dto';
 import { AiVerifyAttendanceDto } from './dto/ai-verify-attendance.dto';
 import { extractUserId, parseBoolean } from '../../common/utils/request-parser.util';
 import { ShareTokenContext } from './attendance.service';
+import {
+  DEFAULT_FACE_DISTANCE_THRESHOLD,
+  percentageToDistanceThreshold,
+} from './ai-face.service';
 
 /**
  * Trích xuất ShareTokenContext từ query params nếu đầy đủ.
@@ -178,6 +182,19 @@ export class ClassAttendanceController {
   ) {
     const userId = extractUserId(req);
     const shareToken = extractShareToken(shareId, exp, sig);
-    return this.classesService.verifyFace(id, studentId, userId, body.descriptor, shareToken);
+    const distanceThreshold =
+      body.distanceThreshold ??
+      (body.matchPercentage !== undefined
+        ? percentageToDistanceThreshold(body.matchPercentage)
+        : DEFAULT_FACE_DISTANCE_THRESHOLD);
+
+    return this.classesService.verifyFace(
+      id,
+      studentId,
+      userId,
+      body.descriptor,
+      distanceThreshold,
+      shareToken,
+    );
   }
 }

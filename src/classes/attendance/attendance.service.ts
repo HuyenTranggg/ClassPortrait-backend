@@ -6,7 +6,10 @@ import { ClassEntity } from '../entities/class.entity';
 import { StudentEntity } from '../../students/entities/student.entity';
 import { ShareLinkEntity } from '../share/entities/share-link.entity';
 import { resolveShareLinkExpiresAt, verifyShareLinkSignature } from '../../common/utils/share-link-signature.util';
-import { AiFaceService } from './ai-face.service';
+import {
+  AiFaceService,
+  DEFAULT_FACE_DISTANCE_THRESHOLD,
+} from './ai-face.service';
 
 export type AttendanceStudentView = {
   studentId: string;
@@ -380,17 +383,19 @@ export class ClassAttendanceService {
     studentId: string,
     userId: string,
     liveDescriptor: number[],
+    distanceThreshold = DEFAULT_FACE_DISTANCE_THRESHOLD,
     shareToken?: ShareTokenContext,
-  ): Promise<{ verified: true; matchScore: number }> {
+  ): Promise<{ verified: true; matchScore: number; distance: number; threshold: number }> {
     await this.assertAttendanceAccess(classId, userId, shareToken);
 
     const student = await this.assertStudentInClass(classId, studentId);
 
     // So khớp descriptor — có thể ném ServiceUnavailableException nếu model chưa load
     // hoặc UnprocessableEntityException nếu ảnh thẻ không có mặt
-    const { isMatch, matchScore, distance } = await this.aiFaceService.matchDescriptor(
+    const { isMatch, matchScore, distance, threshold } = await this.aiFaceService.matchDescriptor(
       student,
       liveDescriptor,
+      distanceThreshold,
     );
 
     if (!isMatch) {
@@ -399,11 +404,12 @@ export class ClassAttendanceService {
         message: 'Khuon mat khong khop voi anh the sinh vien.',
         matchScore,
         distance,
+        threshold,
       });
     }
 
     // Không ghi database tại đây. Frontend cập nhật bản nháp và chỉ lưu attendance
     // khi người dùng bấm "Lưu", nhất quán với luồng điểm danh thủ công.
-    return { verified: true, matchScore };
+    return { verified: true, matchScore, distance, threshold };
   }
 }
