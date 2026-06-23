@@ -12,7 +12,7 @@ import axios from 'axios';
 import { StudentEntity } from '../../students/entities/student.entity';
 
 // Khoảng cách Euclidean tối đa để xem là cùng 1 người.
-// Frontend đang dùng Euclidean với ngưỡng 0.40. Backend nới nhẹ thành 0.42 để bù sai số.
+// Frontend và Backend cùng dùng ngưỡng 0.42 để tránh loại bỏ ca hợp lệ trước khi gửi xác minh.
 const EUCLIDEAN_THRESHOLD = 0.42;
 
 // TTL để tự động re-compute descriptor (7 ngày tính bằng ms)

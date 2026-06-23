@@ -147,15 +147,15 @@ export class ClassAttendanceController {
   }
 
   @Post(':id/attendance/students/:studentId/ai-verify')
-  @ApiOperation({ summary: 'Xác thực khuôn mặt AI và ghi nhận điểm danh' })
+  @ApiOperation({ summary: 'Xác thực khuôn mặt AI cho bản nháp điểm danh' })
   @ApiParam({ name: 'id', description: 'ID của lớp' })
   @ApiParam({ name: 'studentId', description: 'ID của sinh viên' })
   @ApiQuery({ name: 'shareId', required: false, description: 'ID share link (dành cho giám thị)' })
   @ApiQuery({ name: 'exp', required: false, description: 'Unix timestamp ms hết hạn của share link' })
   @ApiQuery({ name: 'sig', required: false, description: 'Chữ ký HMAC của share link' })
   /**
-   * Nhận face descriptor từ Frontend, so khớp với descriptor gốc trong DB,
-   * và ghi nhận điểm danh nếu khuôn mặt khớp.
+   * Nhận face descriptor từ Frontend và so khớp với descriptor gốc trong DB.
+   * Endpoint chỉ xác thực; kết quả điểm danh được lưu khi người dùng bấm "Lưu".
    * Hỗ trợ cả chủ lớp (JWT) và giám thị (shareToken).
    *
    * @param id ID lớp học.
@@ -165,7 +165,7 @@ export class ClassAttendanceController {
    * @param shareId ID share link của giám thị (tuỳ chọn).
    * @param exp Unix timestamp hết hạn của share link (tuỳ chọn).
    * @param sig Chữ ký HMAC của share link (tuỳ chọn).
-   * @returns status 'present' và matchScore nếu xác thực thành công.
+   * @returns verified=true và matchScore nếu xác thực thành công.
    */
   async aiVerifyAttendance(
     @Param('id', new ParseUUIDPipe()) id: string,
@@ -178,6 +178,6 @@ export class ClassAttendanceController {
   ) {
     const userId = extractUserId(req);
     const shareToken = extractShareToken(shareId, exp, sig);
-    return this.classesService.verifyFaceAndMark(id, studentId, userId, body.descriptor, shareToken);
+    return this.classesService.verifyFace(id, studentId, userId, body.descriptor, shareToken);
   }
 }
