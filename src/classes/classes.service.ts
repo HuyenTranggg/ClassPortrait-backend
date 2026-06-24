@@ -235,21 +235,29 @@ export class ClassesService {
   }
 
   /**
-   * Xác thực khuôn mặt AI và ghi nhận điểm danh nếu khớp.
+   * Xác thực khuôn mặt AI để frontend cập nhật bản nháp điểm danh.
    * @param classId ID lớp học.
    * @param studentId UUID sinh viên cần xác thực.
    * @param userId ID người dùng thực hiện thao tác.
    * @param liveDescriptor Descriptor 128-d từ camera Frontend.
    * @param shareToken Context share link (tuỳ chọn, dành cho giám thị).
-   * @returns status 'present' và matchScore sau khi xác thực thành công.
+   * @returns verified=true và matchScore sau khi xác thực thành công.
    */
-  async verifyFaceAndMark(
+  async verifyFace(
     classId: string,
     studentId: string,
     userId: string,
     liveDescriptor: number[],
+    distanceThreshold: number,
     shareToken?: ShareTokenContext,
-  ): Promise<{ status: AttendanceStatus; matchScore: number }> {
-    return this.classAttendanceService.verifyFaceAndMark(classId, studentId, userId, liveDescriptor, shareToken);
+  ): Promise<{ verified: true; matchScore: number; distance: number; threshold: number }> {
+    return this.classAttendanceService.verifyFace(
+      classId,
+      studentId,
+      userId,
+      liveDescriptor,
+      distanceThreshold,
+      shareToken,
+    );
   }
 }

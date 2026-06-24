@@ -38,6 +38,7 @@ export type SharedClassView = {
     importOrder: number;
   };
   students: Array<{
+    studentId?: string;
     mssv: string;
     fullName: string;
     classCode: string; // Mã lớp học của sinh viên
@@ -350,6 +351,7 @@ export class ClassShareService {
         importOrder: classEntity.importOrder,
       },
       students: students.map((student) => ({
+        ...(canTakeAttendance ? { studentId: student.id } : {}),
         mssv: student.mssv,
         fullName: student.fullName,
         classCode: student.classCode, // Hiển thị mã lớp học của sinh viên

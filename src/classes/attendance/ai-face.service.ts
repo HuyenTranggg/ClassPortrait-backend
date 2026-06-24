@@ -11,9 +11,33 @@ import * as path from 'path';
 import axios from 'axios';
 import { StudentEntity } from '../../students/entities/student.entity';
 
-// Khoảng cách Euclidean tối đa để xem là cùng 1 người.
-// Frontend đang dùng Euclidean với ngưỡng 0.40. Backend nới nhẹ thành 0.42 để bù sai số.
-const EUCLIDEAN_THRESHOLD = 0.42;
+export const DEFAULT_FACE_DISTANCE_THRESHOLD = 0.4375;
+export const MIN_FACE_DISTANCE_THRESHOLD = 0.3;
+export const MAX_FACE_DISTANCE_THRESHOLD = 0.55;
+export const ALLOWED_FACE_MATCH_PERCENTAGES = [60, 65, 70, 75, 80, 85, 90, 95] as const;
+
+const SIMILARITY_ANCHORS = [
+  { distance: 0.0, score: 100 },
+  { distance: 0.25, score: 95 },
+  { distance: 0.4, score: 85 },
+  { distance: DEFAULT_FACE_DISTANCE_THRESHOLD, score: 75 },
+  { distance: 0.45, score: 70 },
+  { distance: 0.5, score: 50 },
+  { distance: 0.6, score: 20 },
+  { distance: 0.7, score: 0 },
+] as const;
+
+/**
+ * Hàm nghịch đảo của euclideanToMatchScore trong vùng 50-92%, là vùng chứa
+ * toàn bộ các ngưỡng phần trăm cho phép.
+ */
+export function percentageToDistanceThreshold(percentage: number): number {
+  if (percentage >= 92) {
+    return ((100 - percentage) / 8) * 0.4;
+  }
+
+  return 0.4 + ((92 - percentage) / 42) * 0.1;
+}
 
 // TTL để tự động re-compute descriptor (7 ngày tính bằng ms)
 const DESCRIPTOR_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -27,6 +51,7 @@ export type FaceMatchResult = {
   matchScore: number;
   /** Khoảng cách Euclidean gốc. */
   distance: number;
+  threshold: number;
 };
 
 /**
@@ -234,16 +259,22 @@ export class AiFaceService implements OnModuleInit {
    * @returns Phần trăm khớp [0, 100].
    */
   euclideanToMatchScore(distance: number): number {
-    if (distance <= 0) return 100;
-    if (distance < 0.4) {
-      return Math.round(92 + (1 - distance / 0.4) * 8);
-    } else if (distance < 0.5) {
-      const ratio = (distance - 0.4) / 0.1;
-      return Math.round(92 - ratio * 42);
-    } else {
-      const ratio = Math.min(1.0, (distance - 0.5) / 0.5);
-      return Math.round(50 - ratio * 50);
+    if (distance <= SIMILARITY_ANCHORS[0].distance) return 100;
+
+    const lastAnchor = SIMILARITY_ANCHORS[SIMILARITY_ANCHORS.length - 1];
+    if (distance >= lastAnchor.distance) return 0;
+
+    for (let index = 1; index < SIMILARITY_ANCHORS.length; index += 1) {
+      const left = SIMILARITY_ANCHORS[index - 1];
+      const right = SIMILARITY_ANCHORS[index];
+
+      if (distance <= right.distance) {
+        const ratio = (distance - left.distance) / (right.distance - left.distance);
+        return Math.round(left.score + ratio * (right.score - left.score));
+      }
     }
+
+    return 0;
   }
 
   /**
@@ -253,12 +284,20 @@ export class AiFaceService implements OnModuleInit {
    * @param liveDescriptor Descriptor từ camera frontend (128 số float).
    * @returns FaceMatchResult gồm isMatch, matchScore, distance.
    */
-  async matchDescriptor(student: StudentEntity, liveDescriptor: number[]): Promise<FaceMatchResult> {
+  async matchDescriptor(
+    student: StudentEntity,
+    liveDescriptor: number[],
+    distanceThreshold = DEFAULT_FACE_DISTANCE_THRESHOLD,
+  ): Promise<FaceMatchResult> {
     const referenceDescriptor = await this.getOrRefreshDescriptor(student);
     const distance = this.euclideanDistance(referenceDescriptor, liveDescriptor);
     const matchScore = this.euclideanToMatchScore(distance);
-    const isMatch = distance <= EUCLIDEAN_THRESHOLD;
+    const threshold = Math.min(
+      MAX_FACE_DISTANCE_THRESHOLD,
+      Math.max(MIN_FACE_DISTANCE_THRESHOLD, distanceThreshold),
+    );
+    const isMatch = distance <= threshold;
 
-    return { isMatch, matchScore, distance };
+    return { isMatch, matchScore, distance, threshold };
   }
 }
