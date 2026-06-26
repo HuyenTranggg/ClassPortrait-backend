@@ -26,6 +26,7 @@ async function bootstrap() {
     .setTitle('ClassPortrait API')
     .setDescription('API cho Sổ ảnh sinh viên')
     .setVersion('1.0')
+    .addServer('/soanh/')
     .addBearerAuth(undefined, 'bearer')
     .addSecurityRequirements('bearer')
     .build();
