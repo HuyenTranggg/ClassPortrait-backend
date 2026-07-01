@@ -52,6 +52,7 @@ export class ClassQueryService {
     const rows = await this.classesRepository
       .createQueryBuilder('c')
       .leftJoin('c.students', 's')
+      .leftJoin('c.shareLinks', 'sl')
       .where('c.userId = :userId', { userId })
       .select('c.id', 'id')
       .addSelect('c.classExamCode', 'classExamCode')
@@ -67,6 +68,8 @@ export class ClassQueryService {
       .addSelect('c.importOrder', 'importOrder')
       .addSelect('c.createdAt', 'createdAt')
       .addSelect('COUNT(s.id)', 'studentCount')
+      .addSelect('MAX(CAST(sl.isActive AS INT))', 'shareIsActive')
+      .addSelect('MAX(CAST(sl.requireLogin AS INT))', 'shareRequireLogin')
       .groupBy('c.id')
       .orderBy('c.createdAt', 'DESC')
       .addOrderBy('c.importOrder', 'ASC')
@@ -85,6 +88,8 @@ export class ClassQueryService {
         importOrder: number;
         createdAt: Date;
         studentCount: string;
+        shareIsActive: number | null;
+        shareRequireLogin: number | null;
       }>();
 
     if (rows.length === 0) return [];
@@ -121,6 +126,10 @@ export class ClassQueryService {
       createdAt: row.createdAt,
       studentCount: Number(row.studentCount),
       classCodes: Array.from(codeMap.get(row.id) ?? []).sort(),
+      shareLink: row.shareIsActive !== null ? {
+        isActive: Boolean(row.shareIsActive),
+        requireLogin: Boolean(row.shareRequireLogin),
+      } : undefined,
     }));
   }
 
