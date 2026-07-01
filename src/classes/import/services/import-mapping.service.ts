@@ -170,7 +170,7 @@ export class ImportMappingService {
       const getOptionalValue = (column?: string): string | undefined => {
         if (!column) return undefined;
         const val = row[column];
-        return val !== undefined && val !== null ? String(val).trim() : undefined;
+        return val !== undefined && val !== null ? String(val).trim() || undefined : undefined;
       };
 
       const getDateValue = (column?: string): Date | undefined => {

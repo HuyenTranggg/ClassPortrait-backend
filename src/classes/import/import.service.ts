@@ -267,6 +267,27 @@ export class ClassImportService {
       resolvedMapping.mssvColumn = mssvColumn;
       resolvedMapping.nameColumn = nameColumn;
       resolvedMapping.startRow = startRow;
+
+      // Apply all other manual column overrides (if provided, override auto-detected)
+      const optionalFields: Array<keyof ResolvedImportMapping> = [
+        'semesterColumn', 'departmentColumn', 'classCodeColumn', 'courseCodeColumn',
+        'courseNameColumn', 'classNameColumn', 'classExamCodeColumn', 'examDateColumn',
+        'examRoomColumn', 'examTimeColumn', 'examShiftColumn', 'instructorColumn',
+        'dobColumn', 'genderColumn', 'emailColumn',
+      ];
+      for (const field of optionalFields) {
+        const optionKey = field as keyof ImportClassOptions;
+        const colName = options[optionKey] as string | undefined;
+        if (colName !== undefined) {
+          // empty string means "ignore this column"
+          if (colName === '') {
+            (resolvedMapping as any)[field] = undefined;
+          } else {
+            const found = this.importMappingService.findHeaderKey(parsedData.headers, colName);
+            (resolvedMapping as any)[field] = found ?? undefined;
+          }
+        }
+      }
     } else {
       resolvedMapping = this.importMappingService.detectColumnMapping(parsedData.headers);
       resolvedMapping.startRow = startRow;

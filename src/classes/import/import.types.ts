@@ -96,6 +96,22 @@ export type ImportClassOptions = {
   confirmUpdate?: boolean;
   targetClassId?: string;
   previewOnly?: boolean;
+  // Manual overrides for all optional columns
+  semesterColumn?: string;
+  departmentColumn?: string;
+  classCodeColumn?: string;
+  courseCodeColumn?: string;
+  courseNameColumn?: string;
+  classNameColumn?: string;
+  classExamCodeColumn?: string;
+  examDateColumn?: string;
+  examRoomColumn?: string;
+  examTimeColumn?: string;
+  examShiftColumn?: string;
+  instructorColumn?: string;
+  dobColumn?: string;
+  genderColumn?: string;
+  emailColumn?: string;
 };
 
 /** Preview result (không thực sự lưu vào DB) */

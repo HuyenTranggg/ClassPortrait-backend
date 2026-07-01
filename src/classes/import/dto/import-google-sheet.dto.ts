@@ -92,4 +92,20 @@ export class ImportGoogleSheetDto {
   @IsOptional()
   @IsUUID('4')
   targetClassId?: string;
+
+  @IsOptional() @IsString() @MaxLength(100) semesterColumn?: string;
+  @IsOptional() @IsString() @MaxLength(100) departmentColumn?: string;
+  @IsOptional() @IsString() @MaxLength(100) classCodeColumn?: string;
+  @IsOptional() @IsString() @MaxLength(100) courseCodeColumn?: string;
+  @IsOptional() @IsString() @MaxLength(100) courseNameColumn?: string;
+  @IsOptional() @IsString() @MaxLength(100) classNameColumn?: string;
+  @IsOptional() @IsString() @MaxLength(100) classExamCodeColumn?: string;
+  @IsOptional() @IsString() @MaxLength(100) examDateColumn?: string;
+  @IsOptional() @IsString() @MaxLength(100) examRoomColumn?: string;
+  @IsOptional() @IsString() @MaxLength(100) examTimeColumn?: string;
+  @IsOptional() @IsString() @MaxLength(100) examShiftColumn?: string;
+  @IsOptional() @IsString() @MaxLength(100) instructorColumn?: string;
+  @IsOptional() @IsString() @MaxLength(100) dobColumn?: string;
+  @IsOptional() @IsString() @MaxLength(100) genderColumn?: string;
+  @IsOptional() @IsString() @MaxLength(100) emailColumn?: string;
 }
