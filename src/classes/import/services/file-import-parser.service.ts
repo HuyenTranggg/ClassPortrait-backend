@@ -110,34 +110,57 @@ export class FileImportParserService {
 
   private async parseCsvFile(buffer: Buffer): Promise<ParsedImportData> {
     return new Promise((resolve, reject) => {
-      const results: ImportRow[] = [];
-      const headersSet = new Set<string>();
+      const matrix: unknown[][] = [];
       const stream = Readable.from(buffer);
-      let dataRowIndex = 0;
 
       stream
-        .pipe(csvParser())
+        .pipe(csvParser({ headers: false }))
         .on('data', (data) => {
-          dataRowIndex += 1;
-          const row: ImportRow = {
-            __rowNumber: dataRowIndex + 1,
-          };
-
-          Object.entries(data).forEach(([key, value]) => {
-            const cleanedKey = this.cleanCellValue(key);
-            headersSet.add(cleanedKey);
-            row[cleanedKey] = value;
-          });
-
-          results.push(row);
+          const rowArray: unknown[] = [];
+          const keys = Object.keys(data);
+          let maxIndex = -1;
+          for (const key of keys) {
+            const idx = parseInt(key, 10);
+            if (!isNaN(idx) && idx > maxIndex) {
+              maxIndex = idx;
+            }
+          }
+          for (let i = 0; i <= maxIndex; i++) {
+            rowArray.push(data[String(i)] || '');
+          }
+          matrix.push(rowArray);
         })
-        .on('end', () =>
+        .on('end', () => {
+          if (matrix.length === 0) {
+            return reject(new BadRequestException('File CSV trống'));
+          }
+
+          const headerRowIndex = this.detectHeaderRow(matrix);
+          const rawHeaders = matrix[headerRowIndex] ?? [];
+          const headers = rawHeaders
+            .map((cell, index) => this.cleanCellValue(cell) || `Column ${index + 1}`)
+            .map((header) => header.trim());
+
+          const rows: ImportRow[] = [];
+          for (let rowIndex = headerRowIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
+            const sourceRow = matrix[rowIndex] ?? [];
+            const rowObject: ImportRow = {
+              __rowNumber: rowIndex + 1,
+            };
+
+            headers.forEach((header, cellIndex) => {
+              rowObject[header] = sourceRow[cellIndex];
+            });
+
+            rows.push(rowObject);
+          }
+
           resolve({
-            rows: results,
-            headers: Array.from(headersSet),
+            rows,
+            headers,
             sourceType: SourceType.EXCEL,
-          }),
-        )
+          });
+        })
         .on('error', (error) => reject(error));
     });
   }

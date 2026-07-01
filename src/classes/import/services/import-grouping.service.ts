@@ -23,6 +23,8 @@ export class ImportGroupingService {
       // Chuẩn hóa dữ liệu để tránh phân mảnh lớp thi
       if (examTime) {
         examTime = examTime.trim();
+        // Chuẩn hóa '16h00' -> '16:00' và xóa khoảng trắng quanh dấu '-' để đồng nhất
+        examTime = examTime.replace(/(\d)h(\d)/gi, '$1:$2').replace(/\s*-\s*/g, '-');
         const num = Number(examTime);
         if (!isNaN(num) && num >= 0 && num < 1) {
           let totalSeconds = Math.round(num * 24 * 60 * 60);

@@ -3,7 +3,7 @@ import { RawStudentData, ResolvedImportMapping, ParsedImportData } from '../impo
 
 @Injectable()
 export class ImportMappingService {
-  private static readonly MSSV_PATTERN = /^[MPTmpt0-9]{8,10}$/;
+  private static readonly MSSV_PATTERN = /^20\d{2}[a-zA-Z0-9]*$/;
 
   private normalizeForCompare(value: string): string {
     return value
@@ -317,9 +317,9 @@ export class ImportMappingService {
       return this.buildUtcDate(year, month, day);
     }
 
-    // Try DD/MM/YYYY
-    if (/^\d{1,2}[/-]\d{1,2}[/-]\d{4}$/.test(trimmed)) {
-      const [d, m, y] = trimmed.split(/[-\/]/).map(Number);
+    // Try DD/MM/YYYY or DD.MM.YYYY
+    if (/^\d{1,2}[/.-]\d{1,2}[/.-]\d{4}$/.test(trimmed)) {
+      const [d, m, y] = trimmed.split(/[-\/.]/).map(Number);
       const date = this.buildUtcDate(y, m, d);
       if (date) return date;
     }
