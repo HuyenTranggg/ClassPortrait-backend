@@ -256,45 +256,49 @@ export class ClassImportService {
    * @throws UnprocessableEntityException Nếu không thể nhận diện được các cột bắt buộc (MSSV, Họ tên).
    */
   private resolveMapping(parsedData: any, startRow: number, options?: ImportClassOptions): ResolvedImportMapping {
-    let resolvedMapping: ResolvedImportMapping;
-    if (options?.mappingMode === 'manual' && options?.mssvColumn && options?.nameColumn) {
-      resolvedMapping = this.importMappingService.detectColumnMapping(parsedData.headers, true);
-      const mssvColumn = this.importMappingService.findHeaderKey(parsedData.headers, options.mssvColumn);
-      const nameColumn = this.importMappingService.findHeaderKey(parsedData.headers, options.nameColumn);
-      if (!mssvColumn || !nameColumn) {
-        throw new UnprocessableEntityException('Không thể xác định cột MSSV và Họ và tên theo mapping thủ công');
-      }
-      resolvedMapping.mssvColumn = mssvColumn;
-      resolvedMapping.nameColumn = nameColumn;
-      resolvedMapping.startRow = startRow;
+    const resolvedMapping: ResolvedImportMapping = {
+      mssvColumn: '',
+      nameColumn: '',
+      startRow,
+    };
 
-      // Apply all other manual column overrides (if provided, override auto-detected)
-      const optionalFields: Array<keyof ResolvedImportMapping> = [
-        'semesterColumn', 'departmentColumn', 'classCodeColumn', 'courseCodeColumn',
-        'courseNameColumn', 'classNameColumn', 'classExamCodeColumn', 'examDateColumn',
-        'examRoomColumn', 'examTimeColumn', 'examShiftColumn', 'instructorColumn',
-        'dobColumn', 'genderColumn', 'emailColumn',
-      ];
-      for (const field of optionalFields) {
-        const optionKey = field as keyof ImportClassOptions;
-        const colName = options[optionKey] as string | undefined;
-        if (colName !== undefined) {
-          // empty string means "ignore this column"
-          if (colName === '') {
-            (resolvedMapping as any)[field] = undefined;
-          } else {
-            const found = this.importMappingService.findHeaderKey(parsedData.headers, colName);
-            (resolvedMapping as any)[field] = found ?? undefined;
-          }
-        }
-      }
-    } else {
-      resolvedMapping = this.importMappingService.detectColumnMapping(parsedData.headers);
-      resolvedMapping.startRow = startRow;
+    // Áp dụng MSSV và Name do Frontend truyền xuống
+    if (options?.mssvColumn) {
+      const mssvColumn = this.importMappingService.findHeaderKey(parsedData.headers, options.mssvColumn);
+      if (mssvColumn) resolvedMapping.mssvColumn = mssvColumn;
+    }
+    if (options?.nameColumn) {
+      const nameColumn = this.importMappingService.findHeaderKey(parsedData.headers, options.nameColumn);
+      if (nameColumn) resolvedMapping.nameColumn = nameColumn;
     }
 
+    // Luôn kiểm tra MSSV và Họ Tên
     if (!resolvedMapping.mssvColumn || !resolvedMapping.nameColumn) {
-      throw new UnprocessableEntityException('Không thể xác định cột MSSV và Họ và tên');
+      throw new UnprocessableEntityException('Không thể xác định đầy đủ cột MSSV và Họ và tên từ dữ liệu truyền xuống.');
+    }
+
+    // Áp dụng các cột tùy chọn khác do Frontend truyền xuống
+    const optionalFields: Array<keyof ResolvedImportMapping> = [
+      'semesterColumn', 'departmentColumn', 'classCodeColumn', 'courseCodeColumn',
+      'courseNameColumn', 'classNameColumn', 'classExamCodeColumn', 'examDateColumn',
+      'examRoomColumn', 'examTimeColumn', 'examShiftColumn', 'instructorColumn',
+      'dobColumn', 'genderColumn', 'emailColumn',
+    ];
+    
+    for (const field of optionalFields) {
+      const optionKey = field as keyof ImportClassOptions;
+      const colName = options?.[optionKey] as string | undefined;
+      
+      if (colName !== undefined) {
+        if (colName === '') {
+          (resolvedMapping as any)[field] = undefined;
+        } else {
+          const found = this.importMappingService.findHeaderKey(parsedData.headers, colName);
+          (resolvedMapping as any)[field] = found ?? undefined;
+        }
+      } else {
+        (resolvedMapping as any)[field] = undefined;
+      }
     }
 
     return resolvedMapping;
