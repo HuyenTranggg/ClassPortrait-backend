@@ -58,7 +58,7 @@ export class ImportMappingService {
    */
   detectColumnMapping(headers: string[], allowMissingRequired = false): ResolvedImportMapping {
     // Required fields
-    const mssvKey = this.findHeaderByAliases(headers, ['mssv', 'mã số sinh viên', 'ma so sinh vien', 'mã sinh viên', 'ma sinh vien', 'student id']);
+    const mssvKey = this.findHeaderByAliases(headers, ['mssv', 'mã số sinh viên', 'ma so sinh vien', 'mã sinh viên', 'ma sinh vien', 'student id', 'studentid']);
     const nameKey = this.findHeaderByAliases(headers, [
       'họ và tên',
       'họ tên',
@@ -72,6 +72,7 @@ export class ImportMappingService {
       'name',
       'fullname',
       'full name',
+      'studentname',
     ]);
 
     if (!allowMissingRequired) {
@@ -85,7 +86,7 @@ export class ImportMappingService {
     }
 
     // Optional fields for exam session grouping and student info
-    const semesterKey = this.findHeaderByAliases(headers, ['học kỳ', 'hoc ky', 'semester', 'học kì', 'hoc ki']);
+    const semesterKey = this.findHeaderByAliases(headers, ['học kỳ', 'hoc ky', 'semester', 'học kì', 'hoc ki', 'termid']);
     const departmentKey = this.findHeaderByAliases(headers, [
       'đv giảng dạy',
       'đơn vị',
@@ -97,9 +98,10 @@ export class ImportMappingService {
       'khoa',
       'viện',
       'vien',
+      'academicname',
     ]);
-    const classCodeKey = this.findHeaderByAliases(headers, ['mã lớp', 'ma lop', 'class code', 'mã lớp học']);
-    const courseCodeKey = this.findHeaderByAliases(headers, ['mã học phần', 'ma hoc phan', 'course code', 'mã hp']);
+    const classCodeKey = this.findHeaderByAliases(headers, ['mã lớp', 'ma lop', 'class code', 'mã lớp học', 'classid']);
+    const courseCodeKey = this.findHeaderByAliases(headers, ['mã học phần', 'ma hoc phan', 'course code', 'mã hp', 'courseid']);
     const courseNameKey = this.findHeaderByAliases(headers, [
       'tên học phần',
       'ten hoc phan',
@@ -110,11 +112,11 @@ export class ImportMappingService {
     ]);
     const classTypeKey = this.findHeaderByAliases(headers, ['loại lớp', 'loai lop', 'class type', 'type', 'loại']);
     const classNameKey = this.findHeaderByAliases(headers, ['tên lớp', 'ten lop', 'class name']);
-    const classExamCodeKey = this.findHeaderByAliases(headers, ['mã lớp thi', 'ma lop thi', 'class exam code', 'exam code']);
+    const classExamCodeKey = this.findHeaderByAliases(headers, ['mã lớp thi', 'ma lop thi', 'class exam code', 'exam code', 'examid']);
     const examDateKey = this.findHeaderByAliases(headers, ['ngày thi', 'ngay thi', 'exam date', 'date']);
     const examRoomKey = this.findHeaderByAliases(headers, ['phòng thi', 'phong thi', 'exam room', 'room']);
     const examTimeKey = this.findHeaderByAliases(headers, ['thời gian thi', 'thoi gian thi', 'giờ thi', 'gio thi', 'exam time', 'time']);
-    const examShiftKey = this.findHeaderByAliases(headers, ['kíp thi', 'kip thi', 'ca thi', 'exam shift', 'shift']);
+    const examShiftKey = this.findHeaderByAliases(headers, ['kíp thi', 'kip thi', 'ca thi', 'exam shift', 'shift', 'makip']);
     const instructorKey = this.findHeaderByAliases(headers, [
       'giảng viên',
       'giang vien',
@@ -127,7 +129,7 @@ export class ImportMappingService {
     ]);
     const notesKey = this.findHeaderByAliases(headers, ['ghi chú', 'ghi chu', 'notes', 'note']);
     const genderKey = this.findHeaderByAliases(headers, ['giới tính', 'gioi tinh', 'gender']);
-    const dobKey = this.findHeaderByAliases(headers, ['ngày sinh', 'ngay sinh', 'date of birth', 'dob']);
+    const dobKey = this.findHeaderByAliases(headers, ['ngày sinh', 'ngay sinh', 'date of birth', 'dob', 'birthdate']);
     const emailKey = this.findHeaderByAliases(headers, ['email', 'thư điện tử', 'thu dien tu']);
 
     return {
