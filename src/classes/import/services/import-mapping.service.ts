@@ -112,7 +112,7 @@ export class ImportMappingService {
     ]);
     const classTypeKey = this.findHeaderByAliases(headers, ['loại lớp', 'loai lop', 'class type', 'type', 'loại']);
     const classNameKey = this.findHeaderByAliases(headers, ['tên lớp', 'ten lop', 'class name']);
-    const classExamCodeKey = this.findHeaderByAliases(headers, ['mã lớp thi', 'ma lop thi', 'class exam code', 'exam code', 'examid']);
+    const classExamCodeKey = this.findHeaderByAliases(headers, ['mã lớp thi', 'ma lop thi', 'lớp thi', 'lop thi', 'class exam code', 'exam code', 'examid']);
     const examDateKey = this.findHeaderByAliases(headers, ['ngày thi', 'ngay thi', 'exam date', 'date']);
     const examRoomKey = this.findHeaderByAliases(headers, ['phòng thi', 'phong thi', 'exam room', 'room']);
     const examTimeKey = this.findHeaderByAliases(headers, ['thời gian thi', 'thoi gian thi', 'giờ thi', 'gio thi', 'exam time', 'time']);
