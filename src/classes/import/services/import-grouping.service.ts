@@ -69,9 +69,9 @@ export class ImportGroupingService {
         groupKey = `p1:${semester}:${dateKey}:${examRoom.trim()}:${timeKey}`;
       } else if (classExamCode && classExamCode.trim() !== '') {
         // Priority 2: Mã lớp thi + Học kỳ
-        // Định danh hành chính do phòng đào tạo cấp
+        // Định danh hành chính do phòng đào tạo cấp — KHÔNG phải fallback
         groupKey = `p2:${semester}:${classExamCode.trim()}`;
-        isFallback = true;
+        isFallback = false;
       } else if (student.classCode && student.classCode.trim() !== '') {
         // Priority 3: Mã lớp học + Học kỳ
         // Mỗi lớp học thường thi cùng phòng — dùng làm fallback
