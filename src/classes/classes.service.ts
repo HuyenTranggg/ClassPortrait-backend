@@ -43,12 +43,11 @@ export class ClassesService {
     return this.importHistoryService.delete(id, userId);
   }
 
-
   async findAll(userId: string): Promise<Class[]> {
     return this.classQueryService.findAll(userId);
   }
 
-  async findAllWithStudentCount(userId: string): Promise<Array<Class & { studentCount: number }>> {
+  async findAllWithStudentCount(userId: string): Promise<Array<Class & { studentCount: number; instructors: Record<string, string> }>> {
     return this.classQueryService.findAllWithStudentCount(userId);
   }
 
@@ -99,7 +98,6 @@ export class ClassesService {
   ): Promise<ImportPreviewResult> {
     return this.classImportService.previewImportFromGoogleSheet(googleSheetUrl, userId, options);
   }
-
 
   /**
    * Tạo link chia sẻ cho lớp học.

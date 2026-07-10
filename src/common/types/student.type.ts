@@ -11,6 +11,7 @@ export interface Student {
   importOrder: number;
   classCode: string; // Mã lớp học (lớp tín chỉ)
   className?: string; // Tên lớp quản lý
+  instructor?: string; // Giảng viên của mã lớp học này
   gender?: string;
   dob?: Date;
   email?: string;

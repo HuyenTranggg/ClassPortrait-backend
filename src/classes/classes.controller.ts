@@ -20,7 +20,7 @@ export class ClassesController {
   @Get()
   @ApiOperation({ summary: 'Lấy danh sách tất cả các lớp' })
   @ApiResponse({ status: 200, description: 'Trả về danh sách các lớp' })
-  async findAll(@Req() req: any): Promise<Array<Class & { studentCount: number }>> {
+  async findAll(@Req() req: any): Promise<Array<Class & { studentCount: number; instructors: Record<string, string> }>> {
     const userId = extractUserId(req);
     return this.classesService.findAllWithStudentCount(userId);
   }
