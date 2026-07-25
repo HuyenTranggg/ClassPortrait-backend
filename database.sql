@@ -70,6 +70,7 @@ CREATE TABLE students (
     photo_status photo_status_enum NOT NULL DEFAULT 'pending',
     class_code VARCHAR(50) NOT NULL,
     class_name VARCHAR(255) NULL,
+    instructor VARCHAR(255) NULL,
     gender VARCHAR(10) NULL,
     dob DATE NULL,
     email VARCHAR(255) NULL,

@@ -45,6 +45,9 @@ export class StudentEntity {
   @Column({ name: 'class_name', type: 'varchar', length: 255, nullable: true })
   className!: string | null;
 
+  @Column({ name: 'instructor', type: 'varchar', length: 255, nullable: true })
+  instructor!: string | null;
+
   @Column({ name: 'gender', type: 'varchar', length: 10, nullable: true })
   gender!: string | null;
 

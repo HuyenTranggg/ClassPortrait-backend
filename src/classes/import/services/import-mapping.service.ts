@@ -3,7 +3,7 @@ import { RawStudentData, ResolvedImportMapping, ParsedImportData } from '../impo
 
 @Injectable()
 export class ImportMappingService {
-  private static readonly MSSV_PATTERN = /^[MPTmpt0-9]{8,10}$/;
+  private static readonly MSSV_PATTERN = /^20\d{2}[a-zA-Z0-9]*$/;
 
   private normalizeForCompare(value: string): string {
     return value
@@ -58,7 +58,7 @@ export class ImportMappingService {
    */
   detectColumnMapping(headers: string[], allowMissingRequired = false): ResolvedImportMapping {
     // Required fields
-    const mssvKey = this.findHeaderByAliases(headers, ['mssv', 'mã số sinh viên', 'ma so sinh vien', 'student id']);
+    const mssvKey = this.findHeaderByAliases(headers, ['mssv', 'mã số sinh viên', 'ma so sinh vien', 'mã sinh viên', 'ma sinh vien', 'student id', 'studentid']);
     const nameKey = this.findHeaderByAliases(headers, [
       'họ và tên',
       'họ tên',
@@ -66,9 +66,13 @@ export class ImportMappingService {
       'ho ten',
       'họ và tên sv',
       'họ và tên sinh viên',
+      'tên sinh viên',
+      'ten sinh viên',
+      'ten sinh vien',
       'name',
       'fullname',
       'full name',
+      'studentname',
     ]);
 
     if (!allowMissingRequired) {
@@ -82,18 +86,22 @@ export class ImportMappingService {
     }
 
     // Optional fields for exam session grouping and student info
-    const semesterKey = this.findHeaderByAliases(headers, ['học kỳ', 'hoc ky', 'semester', 'học kì', 'hoc ki']);
+    const semesterKey = this.findHeaderByAliases(headers, ['học kỳ', 'hoc ky', 'semester', 'học kì', 'hoc ki', 'termid']);
     const departmentKey = this.findHeaderByAliases(headers, [
       'đv giảng dạy',
       'đơn vị',
       'đơn vị giảng dạy',
       'don vi giang day',
+      'dv giang day',
+      'don vi',
       'department',
       'khoa',
       'viện',
+      'vien',
+      'academicname',
     ]);
-    const classCodeKey = this.findHeaderByAliases(headers, ['mã lớp', 'ma lop', 'class code', 'mã lớp học']);
-    const courseCodeKey = this.findHeaderByAliases(headers, ['mã học phần', 'ma hoc phan', 'course code', 'mã hp']);
+    const classCodeKey = this.findHeaderByAliases(headers, ['mã lớp', 'ma lop', 'class code', 'mã lớp học', 'classid']);
+    const courseCodeKey = this.findHeaderByAliases(headers, ['mã học phần', 'ma hoc phan', 'course code', 'mã hp', 'courseid']);
     const courseNameKey = this.findHeaderByAliases(headers, [
       'tên học phần',
       'ten hoc phan',
@@ -104,15 +112,16 @@ export class ImportMappingService {
     ]);
     const classTypeKey = this.findHeaderByAliases(headers, ['loại lớp', 'loai lop', 'class type', 'type', 'loại']);
     const classNameKey = this.findHeaderByAliases(headers, ['tên lớp', 'ten lop', 'class name']);
-    const classExamCodeKey = this.findHeaderByAliases(headers, ['mã lớp thi', 'ma lop thi', 'class exam code', 'exam code']);
+    const classExamCodeKey = this.findHeaderByAliases(headers, ['mã lớp thi', 'ma lop thi', 'lớp thi', 'lop thi', 'class exam code', 'exam code', 'examid']);
     const examDateKey = this.findHeaderByAliases(headers, ['ngày thi', 'ngay thi', 'exam date', 'date']);
     const examRoomKey = this.findHeaderByAliases(headers, ['phòng thi', 'phong thi', 'exam room', 'room']);
-    const examTimeKey = this.findHeaderByAliases(headers, ['thời gian thi', 'thoi gian thi', 'exam time', 'time']);
-    const examShiftKey = this.findHeaderByAliases(headers, ['kíp thi', 'kip thi', 'exam shift', 'shift']);
+    const examTimeKey = this.findHeaderByAliases(headers, ['thời gian thi', 'thoi gian thi', 'giờ thi', 'gio thi', 'exam time', 'time']);
+    const examShiftKey = this.findHeaderByAliases(headers, ['kíp thi', 'kip thi', 'ca thi', 'exam shift', 'shift', 'makip']);
     const instructorKey = this.findHeaderByAliases(headers, [
       'giảng viên',
       'giang vien',
       'gv giảng dạy',
+      'gv giang day',
       'instructor',
       'teacher',
       'giáo viên',
@@ -120,7 +129,7 @@ export class ImportMappingService {
     ]);
     const notesKey = this.findHeaderByAliases(headers, ['ghi chú', 'ghi chu', 'notes', 'note']);
     const genderKey = this.findHeaderByAliases(headers, ['giới tính', 'gioi tinh', 'gender']);
-    const dobKey = this.findHeaderByAliases(headers, ['ngày sinh', 'ngay sinh', 'date of birth', 'dob']);
+    const dobKey = this.findHeaderByAliases(headers, ['ngày sinh', 'ngay sinh', 'date of birth', 'dob', 'birthdate']);
     const emailKey = this.findHeaderByAliases(headers, ['email', 'thư điện tử', 'thu dien tu']);
 
     return {
@@ -170,7 +179,7 @@ export class ImportMappingService {
       const getOptionalValue = (column?: string): string | undefined => {
         if (!column) return undefined;
         const val = row[column];
-        return val !== undefined && val !== null ? String(val).trim() : undefined;
+        return val !== undefined && val !== null ? String(val).trim() || undefined : undefined;
       };
 
       const getDateValue = (column?: string): Date | undefined => {
@@ -232,27 +241,12 @@ export class ImportMappingService {
     const seenMssv = new Set<string>();
 
     for (const student of students) {
-      // Required fields check
+      // Các trường bắt buộc tối thiểu: semester, courseCode, courseName, mssv, fullName
+      // department, classCode, instructor: optional (sinh viên bù/học ghép không có)
       if (!student.semester) {
         errors.push({
           rowNumber: student.importOrder,
           reason: 'Thiếu Học kỳ',
-        });
-        continue;
-      }
-
-      if (!student.department) {
-        errors.push({
-          rowNumber: student.importOrder,
-          reason: 'Thiếu Đơn vị giảng dạy',
-        });
-        continue;
-      }
-
-      if (!student.classCode) {
-        errors.push({
-          rowNumber: student.importOrder,
-          reason: 'Thiếu Mã lớp',
         });
         continue;
       }
@@ -269,14 +263,6 @@ export class ImportMappingService {
         errors.push({
           rowNumber: student.importOrder,
           reason: 'Thiếu Tên học phần',
-        });
-        continue;
-      }
-
-      if (!student.instructor) {
-        errors.push({
-          rowNumber: student.importOrder,
-          reason: 'Thiếu Giảng viên',
         });
         continue;
       }
@@ -317,9 +303,9 @@ export class ImportMappingService {
       return this.buildUtcDate(year, month, day);
     }
 
-    // Try DD/MM/YYYY
-    if (/^\d{1,2}[/-]\d{1,2}[/-]\d{4}$/.test(trimmed)) {
-      const [d, m, y] = trimmed.split(/[-\/]/).map(Number);
+    // Try DD/MM/YYYY or DD.MM.YYYY
+    if (/^\d{1,2}[/.-]\d{1,2}[/.-]\d{4}$/.test(trimmed)) {
+      const [d, m, y] = trimmed.split(/[-\/.]/).map(Number);
       const date = this.buildUtcDate(y, m, d);
       if (date) return date;
     }

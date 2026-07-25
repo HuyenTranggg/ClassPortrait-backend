@@ -37,7 +37,10 @@ export class ImportDuplicateService {
   }
 
   /**
-   * Find duplicate exam session based on grouping criteria (3-tier priority)
+   * Find duplicate exam session based on grouping criteria — priority mirrors groupIntoExamSessions:
+   *   P1: Ngày thi + Phòng thi + Giờ/Kíp thi + Học kỳ  → danh tính vật lý chính xác nhất
+   *   P2: Mã lớp thi (classExamCode) + Học kỳ           → chỉ dùng khi không có đủ thông tin vật lý
+   *   Fallback: isFallback flag + classCode              → fallback theo lớp học
    * Returns the existing class (lớp thi) if found, null otherwise.
    */
   async findDuplicateExamSession(
@@ -52,21 +55,10 @@ export class ImportDuplicateService {
       .andWhere('c.semester = :semester', { semester })
       .andWhere('c.course_code = :courseCode', { courseCode });
 
-    if (isFallback) {
-      // Fallback: group by semester + course + is_fallback + check if any student has same classCode
-      query
-        .andWhere('c.is_fallback = :isFallback', { isFallback: true })
-        .leftJoin('c.students', 's')
-        .andWhere('s.class_code = :classCode', { classCode: group.students[0]?.classCode || '' })
-        .groupBy('c.id')
-        .having('COUNT(s.id) > 0');
-    } else if (classExamCode) {
-      // Priority 1: classExamCode + semester (course is also matched)
-      query.andWhere('c.class_exam_code = :classExamCode', { classExamCode });
-    } else {
-      // Priority 2: examDate + examRoom + (examTime or examShift)
-      if (!examDate || !examRoom) return null;
-
+    if (!isFallback && examDate && examRoom && (examTime || examShift)) {
+      // P1 (mirror grouping P1): Ngày thi + Phòng thi + Giờ/Kíp thi + Học kỳ
+      // Danh tính vật lý chính xác nhất — một mã lớp thi có nhiều phòng vật lý thì
+      // mỗi phòng là 1 ClassEntity riêng biệt, không dùng classExamCode để tránh nhập nhằng.
       const dateStr = `${examDate.getFullYear()}-${String(examDate.getMonth() + 1).padStart(2, '0')}-${String(examDate.getDate()).padStart(2, '0')}`;
       query
         .andWhere('c.exam_date = :dateStr', { dateStr })
@@ -75,18 +67,18 @@ export class ImportDuplicateService {
       if (examTime) {
         const parts = examTime.split(':');
         const timeVariations = [examTime];
-        
+
         if (parts.length >= 2) {
           const h2 = parts[0].padStart(2, '0');
           const h1 = parseInt(parts[0], 10).toString();
           const m = parts[1].padStart(2, '0');
           const s = parts.length >= 3 ? parts[2].padStart(2, '0') : '00';
-          
+
           timeVariations.push(`${h2}:${m}:${s}`);
           timeVariations.push(`${h2}:${m}`);
           timeVariations.push(`${h1}:${m}:${s}`);
           timeVariations.push(`${h1}:${m}`);
-          
+
           // Tương thích ngược: File Excel cũ lưu giờ thi dưới dạng phân số của ngày (VD: 16h = 0.6666666666666666)
           const hours = parseInt(parts[0], 10);
           const minutes = parseInt(parts[1], 10);
@@ -100,12 +92,32 @@ export class ImportDuplicateService {
         const shiftVariations = [examShift];
         if (examShift.includes('.')) shiftVariations.push(examShift.replace('.', ','));
         else if (examShift.includes(',')) shiftVariations.push(examShift.replace(',', '.'));
-        
+
         query.andWhere('c.exam_shift IN (:...shiftVariations)', { shiftVariations: [...new Set(shiftVariations)] });
-      } else {
-        // Neither examTime nor examShift? Should not happen if isFallback=false
-        return null;
       }
+    } else if (!isFallback && classExamCode) {
+      // P2 (mirror grouping P2): Mã lớp thi + Học kỳ
+      // Chỉ dùng khi không có đủ thông tin vật lý (ngày+phòng+giờ/kíp)
+      query.andWhere('c.class_exam_code = :classExamCode', { classExamCode });
+    } else if (isFallback) {
+      // P3/P4/P5 — mirror grouping fallback priority
+      query.andWhere('c.is_fallback = :isFallbackVal', { isFallbackVal: true });
+
+      const firstClassCode = group.students[0]?.classCode?.trim();
+      if (firstClassCode) {
+        // P3 (mirror grouping P3): Mã lớp học (classCode) + Học kỳ
+        // Tìm bằng classCode của sinh viên đầu tiên trong group
+        query
+          .leftJoin('c.students', 's')
+          .andWhere('s.class_code = :classCode', { classCode: firstClassCode })
+          .groupBy('c.id')
+          .having('COUNT(s.id) > 0');
+      }
+      // P4/P5: không có classCode để phân biệt thêm — chỉ dùng semester+courseCode+is_fallback.
+      // getOne() sẽ trả về bản ghi đầu tiên khớp; đây là best-effort cho edge case này.
+    } else {
+      // Không đủ thông tin để xác định — không phải duplicate
+      return null;
     }
 
     const existing = await query.getOne();
@@ -181,7 +193,8 @@ export class ImportDuplicateService {
       { field: 'courseName', oldVal: existingClass.courseName, newVal: group.examInfo.courseName },
       { field: 'department', oldVal: existingClass.department, newVal: group.examInfo.department },
       { field: 'instructor', oldVal: existingClass.instructor, newVal: group.examInfo.instructor },
-      { field: 'isFallback', oldVal: String(existingClass.isFallback), newVal: String(group.isFallback) },
+      // NOTE: isFallback bị loại khỏi danh sách — đây là internal grouping flag,
+      // không phải thông tin người dùng quan tâm và gây false-positive khi so sánh
     ];
 
     for (const { field, oldVal, newVal } of compareFields) {

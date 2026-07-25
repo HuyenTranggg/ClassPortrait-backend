@@ -47,11 +47,12 @@ export class ClassQueryService {
     }));
   }
 
-  async findAllWithStudentCount(userId: string): Promise<Array<Class & { studentCount: number; classCodes: string[] }>> {
+  async findAllWithStudentCount(userId: string): Promise<Array<Class & { studentCount: number; classCodes: string[]; instructors: Record<string, string> }>> {
     // Lấy tất cả lớp với số sinh viên
     const rows = await this.classesRepository
       .createQueryBuilder('c')
       .leftJoin('c.students', 's')
+      .leftJoin('c.shareLinks', 'sl')
       .where('c.userId = :userId', { userId })
       .select('c.id', 'id')
       .addSelect('c.classExamCode', 'classExamCode')
@@ -67,6 +68,8 @@ export class ClassQueryService {
       .addSelect('c.importOrder', 'importOrder')
       .addSelect('c.createdAt', 'createdAt')
       .addSelect('COUNT(s.id)', 'studentCount')
+      .addSelect('MAX(CAST(sl.isActive AS INT))', 'shareIsActive')
+      .addSelect('MAX(CAST(sl.requireLogin AS INT))', 'shareRequireLogin')
       .groupBy('c.id')
       .orderBy('c.createdAt', 'DESC')
       .addOrderBy('c.importOrder', 'ASC')
@@ -85,6 +88,8 @@ export class ClassQueryService {
         importOrder: number;
         createdAt: Date;
         studentCount: string;
+        shareIsActive: number | null;
+        shareRequireLogin: number | null;
       }>();
 
     if (rows.length === 0) return [];
@@ -105,6 +110,25 @@ export class ClassQueryService {
       codeMap.get(classId)!.add(classCode);
     }
 
+    // Lấy distinct (classCode, instructor) của từng lớp để biết GV của từng mã lớp học
+    const instructorRows = await this.studentsRepository
+      .createQueryBuilder('s')
+      .select('s.classId', 'classId')
+      .addSelect('s.classCode', 'classCode')
+      .addSelect('s.instructor', 'instructor')
+      .where('s.classId IN (:...classIds)', { classIds })
+      .andWhere('s.instructor IS NOT NULL')
+      .andWhere("s.instructor != ''")
+      .distinct(true)
+      .getRawMany<{ classId: string; classCode: string; instructor: string }>();
+
+    // Map: classId → Record<classCode, instructor>
+    const instructorMap = new Map<string, Record<string, string>>();
+    for (const { classId, classCode, instructor } of instructorRows) {
+      if (!instructorMap.has(classId)) instructorMap.set(classId, {});
+      instructorMap.get(classId)![classCode] = instructor;
+    }
+
     return rows.map((row) => ({
       id: row.id,
       classExamCode: row.classExamCode ?? undefined,
@@ -121,6 +145,11 @@ export class ClassQueryService {
       createdAt: row.createdAt,
       studentCount: Number(row.studentCount),
       classCodes: Array.from(codeMap.get(row.id) ?? []).sort(),
+      instructors: instructorMap.get(row.id) ?? {},
+      shareLink: row.shareIsActive !== null ? {
+        isActive: Boolean(row.shareIsActive),
+        requireLogin: Boolean(row.shareRequireLogin),
+      } : undefined,
     }));
   }
 
@@ -173,6 +202,7 @@ export class ClassQueryService {
       importOrder: entity.importOrder,
       classCode: entity.classCode,
       className: entity.className ?? undefined,
+      instructor: entity.instructor ?? undefined,
       gender: entity.gender ?? undefined,
       dob: entity.dob ?? undefined,
       email: entity.email ?? undefined,

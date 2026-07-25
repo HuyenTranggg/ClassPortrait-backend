@@ -74,6 +74,7 @@ export class ImportPersistenceService {
         fullName: student.fullName,
         classCode: student.classCode,
         className: student.className ?? null,
+        instructor: student.instructor ?? null,
         gender: student.gender ?? null,
         dob: student.dob ?? null,
         email: student.email ?? null,
@@ -134,6 +135,7 @@ export class ImportPersistenceService {
           fullName: student.fullName,
           classCode: student.classCode,
           className: student.className ?? null,
+          instructor: student.instructor ?? null,
           gender: student.gender ?? null,
           dob: student.dob ?? null,
           email: student.email ?? null,
@@ -195,18 +197,43 @@ export class ImportPersistenceService {
             duplicateMap.set(group.groupKey, existingClass);
           });
 
+          const existingMap = new Map<string, ClassEntity>();
+          const existingToGroups = new Map<string, ExamSessionGroup[]>();
+          const newGroups: ExamSessionGroup[] = [];
+
           for (const group of groups) {
             const existing = duplicateMap.get(group.groupKey);
             if (existing) {
-              await this.updateExamSessionFromGroup(existing, group, userId, manager);
-              classIds.push(existing.id);
-              classOrders.push({ classId: existing.id, importOrder: group.importOrder });
+              existingMap.set(existing.id, existing);
+              const list = existingToGroups.get(existing.id) || [];
+              list.push(group);
+              existingToGroups.set(existing.id, list);
             } else {
-              const newClass = await this.createExamSessionFromGroup(group, userId, manager);
-              await this.createStudentsForGroup(group, newClass.id, manager);
-              classIds.push(newClass.id);
-              classOrders.push({ classId: newClass.id, importOrder: group.importOrder });
+              newGroups.push(group);
             }
+          }
+
+          // Update existing classes (merge multiple groups if they map to the same class)
+          for (const [existingId, groupsToMerge] of existingToGroups.entries()) {
+            const existing = existingMap.get(existingId)!;
+            const mergedGroup = { ...groupsToMerge[0] };
+            
+            if (groupsToMerge.length > 1) {
+              mergedGroup.students = groupsToMerge.flatMap(g => g.students);
+              mergedGroup.importOrder = Math.min(...groupsToMerge.map(g => g.importOrder));
+            }
+            
+            await this.updateExamSessionFromGroup(existing, mergedGroup, userId, manager);
+            classIds.push(existing.id);
+            classOrders.push({ classId: existing.id, importOrder: mergedGroup.importOrder });
+          }
+
+          // Create new classes for groups that didn't match any existing class
+          for (const group of newGroups) {
+            const newClass = await this.createExamSessionFromGroup(group, userId, manager);
+            await this.createStudentsForGroup(group, newClass.id, manager);
+            classIds.push(newClass.id);
+            classOrders.push({ classId: newClass.id, importOrder: group.importOrder });
           }
         } else {
           // Ask action - throw conflict with duplicate info

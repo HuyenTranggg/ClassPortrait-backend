@@ -86,16 +86,37 @@ export class ClassShareService {
   }
 
   /**
+   * Lấy base URL của FRONTEND để dựng link chia sẻ mà con người mở bằng trình duyệt.
+   * Khác getBaseUrl() (trỏ backend, dùng cho URL ảnh do backend phục vụ).
+   *
+   * Ưu tiên FRONTEND_SHARE_BASE_URL (nếu cần override toàn bộ, gồm cả prefix).
+   * Nếu không có, dùng FRONTEND_URL + prefix '/soanh' — đúng cả local
+   * (http://localhost:3001/soanh) lẫn production (https://toolhub.app/soanh),
+   * nơi frontend React được host dưới basename '/soanh'.
+   * @returns Base URL frontend không có dấu '/' ở cuối.
+   */
+  private getFrontendBaseUrl(): string {
+    const explicit = process.env.FRONTEND_SHARE_BASE_URL?.trim();
+    if (explicit && explicit.length > 0) {
+      return explicit.replace(/\/$/, '');
+    }
+
+    const frontendUrl = (process.env.FRONTEND_URL?.trim() || 'http://localhost:3001').replace(/\/$/, '');
+    return `${frontendUrl}/soanh`;
+  }
+
+  /**
    * Dựng URL public dạng mới có công khai exp và chữ ký HMAC.
+   * URL này trỏ tới FRONTEND (nơi render trang chia sẻ), không phải backend.
    * @param shareId ID bản ghi share link.
    * @param expiresAt Unix timestamp milliseconds của thời điểm hết hạn.
    * @param signature Chữ ký HMAC của shareId và expiresAt.
-   * @returns URL đầy đủ của endpoint chia sẻ.
+   * @returns URL đầy đủ của trang chia sẻ trên frontend.
    */
   private buildShareUrl(shareId: string, expiresAt: number, signature: string): string {
     const encodedId = encodeURIComponent(shareId);
     const encodedSig = encodeURIComponent(signature);
-    return `${this.getBaseUrl()}/classes/shared/${encodedId}?exp=${expiresAt}&sig=${encodedSig}`;
+    return `${this.getFrontendBaseUrl()}/classes/shared/${encodedId}?exp=${expiresAt}&sig=${encodedSig}`;
   }
 
   /**

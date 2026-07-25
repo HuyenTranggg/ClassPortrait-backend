@@ -20,6 +20,7 @@ export interface Class {
   instructor: string; // Giảng viên
   importOrder: number; // Thứ tự import
   createdAt: Date;
+  shareLink?: { isActive: boolean; requireLogin: boolean };
 }
 
 /**
