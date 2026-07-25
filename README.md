@@ -11,6 +11,7 @@ npm install
 ```
 
 2. Cấu hình cơ sở dữ liệu
+
 Cập nhật thông tin kết nối PostgreSQL trong file `.env`
 
 3. Khởi động server
